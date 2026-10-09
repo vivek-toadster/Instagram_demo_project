@@ -1,0 +1,78 @@
+<!--
+templates/register.html - Registration Page
+
+Naye user ka account banane ka form.
+Fields: username, email, full name, password, confirm password
+
+Error handling: Agar koi error aata hai (jaise username taken),
+toh form wapas dikhta hai errors ke saath aur purani values bhari rehti hain.
+-->
+{% extends "base.html" %}
+
+{% block title %}Sign Up - InstaClone{% endblock %}
+
+{% block content %}
+<div class="auth-container">
+    <div>
+        <!-- Registration Form -->
+        <div class="auth-box">
+            <h1>InstaClone</h1>
+            <p class="subtitle">Apne doston ki photos aur videos dekhne ke liye sign up karein.</p>
+
+            <!-- Error Messages -->
+            {% if errors %}
+            <ul class="error-list">
+                {% for error in errors %}
+                <li>{{ error }}</li>
+                {% endfor %}
+            </ul>
+            {% endif %}
+
+            <!-- Registration Form -->
+            <form method="POST" action="/register">
+                <div class="form-group">
+                    <input type="email"
+                           name="email"
+                           placeholder="Email address"
+                           value="{{ email|default('') }}"
+                           required>
+                </div>
+                <div class="form-group">
+                    <input type="text"
+                           name="full_name"
+                           placeholder="Full Name"
+                           value="{{ full_name|default('') }}">
+                </div>
+                <div class="form-group">
+                    <input type="text"
+                           name="username"
+                           placeholder="Username"
+                           value="{{ username|default('') }}"
+                           required
+                           minlength="3"
+                           maxlength="50">
+                </div>
+                <div class="form-group">
+                    <input type="password"
+                           name="password"
+                           placeholder="Password (min 6 characters)"
+                           required
+                           minlength="6">
+                </div>
+                <div class="form-group">
+                    <input type="password"
+                           name="confirm_password"
+                           placeholder="Confirm Password"
+                           required>
+                </div>
+                <button type="submit" class="btn-primary">Sign Up</button>
+            </form>
+        </div>
+
+        <!-- Login link -->
+        <div class="auth-link">
+            Already have an account? <a href="/login">Log in</a>
+        </div>
+    </div>
+</div>
+{% endblock %}

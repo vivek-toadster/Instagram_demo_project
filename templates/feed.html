@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block title %}Feed - InstaClone{% endblock %}
+
+{% block content %}
+<div class="page-container">
+
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem;">
+        <h2 style="font-size:1.1rem; font-weight:600; color:var(--text-secondary);">Latest Posts</h2>
+        <a href="/post/create" class="btn-new-post">+ New Post</a>
+    </div>
+
+    {% if posts %}
+    <div class="feed-grid">
+        {% for post in posts %}
+        <div class="post-card">
+
+            <!-- Author Header -->
+            <div class="post-header">
+                <div class="post-avatar">{{ post.author.username[0].upper() }}</div>
+                <a href="/profile/{{ post.author.username }}" class="post-username">{{ post.author.username }}</a>
+                <span class="post-time">{{ post.created_at.strftime("%d %b %Y") }}</span>
+            </div>
+
+            <!-- Image -->
+            <div class="post-img-wrap">
+                <img src="/uploads/{{ post.image_path }}" alt="post" class="post-img">
+            </div>
+
+            <!-- Actions: Like + Delete -->
+            <div class="post-actions">
+                <!-- Like button -->
+                <form method="POST" action="/post/{{ post.id }}/like" style="display:inline;">
+                    <button type="submit" class="btn-like {% if post.id in liked_post_ids %}liked{% endif %}">
+                        {% if post.id in liked_post_ids %}❤️{% else %}🤍{% endif %}
+                        {{ post.likes|length }}
+                    </button>
+                </form>
+
+                <!-- Delete (only owner) -->
+                {% if current_user and current_user.id == post.user_id %}
+                <form method="POST" action="/post/{{ post.id }}/delete"
+                      style="display:inline;" onsubmit="return confirm('Delete this post?')">
+                    <button type="submit" class="btn-delete">🗑 Delete</button>
+                </form>
+                {% endif %}
+            </div>
+
+            <!-- Caption -->
+            {% if post.caption %}
+            <div class="post-body">
+                <p class="post-caption"><strong>{{ post.author.username }}</strong> {{ post.caption }}</p>
+            </div>
+            {% endif %}
+
+            <!-- Comments Section -->
+            <div class="comments-section">
+                {% if post.comments %}
+                <div class="comments-list">
+                    {% for comment in post.comments %}
+                    <div class="comment-item">
+                        <a href="/profile/{{ comment.author.username }}" class="comment-username">{{ comment.author.username }}</a>
+                        <span class="comment-body">{{ comment.body }}</span>
+                        <span class="comment-time">· {{ comment.created_at.strftime("%d %b") }}</span>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% endif %}
+
+                <!-- Add Comment Form -->
+                <form method="POST" action="/post/{{ post.id }}/comment" class="comment-form">
+                    <input type="text" name="body" placeholder="Add a comment..." maxlength="300" required class="comment-input">
+                    <button type="submit" class="comment-submit">Post</button>
+                </form>
+            </div>
+
+        </div>
+        {% endfor %}
+    </div>
+
+    {% else %}
+    <div class="posts-placeholder">
+        <div class="icon">📷</div>
+        <h3>No posts yet</h3>
+        <p>Be the first! <a href="/post/create">Create a post</a></p>
+    </div>
+    {% endif %}
+
+</div>
+{% endblock %}

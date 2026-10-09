@@ -1,0 +1,84 @@
+<!--
+templates/edit_profile.html - Edit Profile Page
+
+User apna profile edit kar sakta hai:
+- Full Name change kar sakte hain
+- Bio update kar sakte hain
+
+Sirf logged-in user apna profile edit kar sakta hai.
+-->
+{% extends "base.html" %}
+
+{% block title %}Edit Profile - InstaClone{% endblock %}
+
+{% block content %}
+<div class="edit-container">
+    <div class="edit-box">
+        <h2>Edit Profile</h2>
+
+        <form method="POST" action="/profile-edit" class="edit-form">
+            <!-- Full Name -->
+            <div class="form-row">
+                <label class="form-label">Name</label>
+                <div class="form-input">
+                    <input type="text"
+                           name="full_name"
+                           value="{{ user.full_name or '' }}"
+                           placeholder="Apna naam likho"
+                           maxlength="100">
+                    <div class="hint">
+                        Ye naam aapki profile pe dikhega
+                    </div>
+                </div>
+            </div>
+
+            <!-- Bio -->
+            <div class="form-row">
+                <label class="form-label">Bio</label>
+                <div class="form-input">
+                    <textarea name="bio"
+                              placeholder="Apne baare mein kuch likho..."
+                              maxlength="500">{{ user.bio or '' }}</textarea>
+                    <div class="hint">
+                        Maximum 500 characters
+                    </div>
+                </div>
+            </div>
+
+            <!-- Username (read only) -->
+            <div class="form-row">
+                <label class="form-label">Username</label>
+                <div class="form-input">
+                    <input type="text"
+                           value="{{ user.username }}"
+                           disabled
+                           style="background: #f0f0f0; color: #8e8e8e;">
+                    <div class="hint">
+                        Username change nahi ho sakta abhi
+                    </div>
+                </div>
+            </div>
+
+            <!-- Email (read only) -->
+            <div class="form-row">
+                <label class="form-label">Email</label>
+                <div class="form-input">
+                    <input type="text"
+                           value="{{ user.email }}"
+                           disabled
+                           style="background: #f0f0f0; color: #8e8e8e;">
+                    <div class="hint">
+                        Email change nahi ho sakta abhi
+                    </div>
+                </div>
+            </div>
+
+            <!-- Buttons -->
+            <div class="edit-actions">
+                <a href="/profile" class="btn-cancel">Cancel</a>
+                <button type="submit" class="btn-save">Save Changes</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

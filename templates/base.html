@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="InstaClone - A simple Instagram-like app built with FastAPI">
+    <title>{% block title %}InstaClone{% endblock %}</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<!-- NAVBAR: current_user context variable se control hoga -->
+{% if current_user %}
+<nav class="navbar">
+    <div class="nav-inner">
+        <a href="/feed" class="nav-logo">InstaClone</a>
+        <div class="nav-links">
+            <a href="/feed">🏠 Feed</a>
+            <a href="/profile" class="nav-username">👤 {{ current_user.username }}</a>
+            <a href="/profile-edit">✏️ Edit</a>
+            <a href="/logout" class="logout-btn">🚪 Logout</a>
+        </div>
+    </div>
+</nav>
+{% endif %}
+
+{% block content %}{% endblock %}
+
+</body>
+</html>

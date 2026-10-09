@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+
+{% block title %}Error - InstaClone{% endblock %}
+
+{% block content %}
+<div class="error-page">
+    <div>
+        <div class="error-code">{{ status_code or "Oops" }}</div>
+        <div class="error-msg">
+            <p>{{ detail or "Kuch galat ho gaya. Dobara try karein." }}</p>
+        </div>
+        <a href="/" class="btn-primary" style="display:inline-block;width:auto;padding:0.7rem 2rem;">
+            🏠 Home par Jao
+        </a>
+    </div>
+</div>
+{% endblock %}

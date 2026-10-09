@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block title %}{{ profile_user.username }} - InstaClone{% endblock %}
+
+{% block content %}
+<div class="page-container">
+
+    {% if success %}
+    <div class="success-msg">✅ {{ success }}</div>
+    {% endif %}
+
+    <!-- PROFILE HEADER -->
+    <div class="profile-header">
+        <div class="profile-avatar-wrap">
+            {% if profile_user.profile_pic %}
+            <img src="{{ profile_user.profile_pic }}" alt="{{ profile_user.username }}" class="profile-avatar">
+            {% else %}
+            <div class="profile-avatar-placeholder">{{ profile_user.username[0].upper() }}</div>
+            {% endif %}
+        </div>
+
+        <div class="profile-info">
+            <div class="profile-username-row">
+                <span class="profile-username">{{ profile_user.username }}</span>
+                {% if is_own_profile %}
+                <a href="/profile-edit" class="btn-edit">Edit Profile</a>
+                {% endif %}
+            </div>
+
+            <div class="profile-stats">
+                <div class="stat">
+                    <span class="stat-num">{{ posts|length }}</span>
+                    <span class="stat-label">posts</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-num">0</span>
+                    <span class="stat-label">followers</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-num">0</span>
+                    <span class="stat-label">following</span>
+                </div>
+            </div>
+
+            <div class="profile-bio">
+                {% if profile_user.full_name %}
+                <div class="profile-fullname">{{ profile_user.full_name }}</div>
+                {% endif %}
+                {% if profile_user.bio %}
+                <div class="profile-bio-text">{{ profile_user.bio }}</div>
+                {% endif %}
+                <div class="profile-joined">📅 Joined: {{ profile_user.created_at.strftime("%B %Y") if profile_user.created_at else "—" }}</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- POSTS GRID -->
+    {% if posts %}
+    <div class="profile-posts-grid">
+        {% for post in posts %}
+        <div class="profile-post-thumb">
+            <img src="/uploads/{{ post.image_path }}" alt="post">
+            {% if is_own_profile %}
+            <form method="POST" action="/post/{{ post.id }}/delete" class="thumb-delete-form"
+                  onsubmit="return confirm('Delete?')">
+                <button type="submit" class="thumb-delete-btn">🗑</button>
+            </form>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="posts-placeholder">
+        <div class="icon">📷</div>
+        <h3>No Posts Yet</h3>
+        {% if is_own_profile %}
+        <p><a href="/post/create">Share your first post!</a></p>
+        {% endif %}
+    </div>
+    {% endif %}
+
+</div>
+{% endblock %}
