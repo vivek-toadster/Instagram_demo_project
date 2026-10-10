@@ -408,6 +408,10 @@ input[type=file]::file-selector-button {
   text-decoration: none;
 }
 
+.profile-username-row form {
+  margin: 0;
+}
+
 .profile-stats {
   display: flex;
   gap: 2rem;

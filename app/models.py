@@ -67,3 +67,13 @@ class Comment(Base):
 
     author = relationship("User", back_populates="comments")
     post = relationship("Post", back_populates="comments")
+
+
+class Follow(Base):
+    __tablename__ = "follows"
+
+    id = Column(Integer, primary_key=True, index=True)
+    follower_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    followed_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+
+    __table_args__ = (UniqueConstraint("follower_id", "followed_id", name="uq_follower_followed"),)

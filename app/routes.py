@@ -6,7 +6,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import User, Post, Like, Comment
+from app.models import User, Post, Like, Comment, Follow
 from app.auth import (
     hash_password,
     verify_password,
@@ -139,7 +139,9 @@ def my_profile(request: Request, db: Session = Depends(get_db)):
     if not user:
         return RedirectResponse(url="/login", status_code=302)
     posts = db.query(Post).filter(Post.user_id == user.id).order_by(Post.created_at.desc()).all()
-    return templates.TemplateResponse("profile.html", ctx(request, db, profile_user=user, is_own_profile=True, posts=posts))
+    followers_count = db.query(Follow).filter(Follow.followed_id == user.id).count()
+    following_count = db.query(Follow).filter(Follow.follower_id == user.id).count()
+    return templates.TemplateResponse("profile.html", ctx(request, db, profile_user=user, is_own_profile=True, posts=posts, followers_count=followers_count, following_count=following_count, is_following=False))
 
 
 @router.get("/profile/{username}", response_class=HTMLResponse)
@@ -150,7 +152,27 @@ def user_profile(username: str, request: Request, db: Session = Depends(get_db))
     current_user = get_current_user(request, db)
     is_own = current_user and current_user.id == profile_user.id
     posts = db.query(Post).filter(Post.user_id == profile_user.id).order_by(Post.created_at.desc()).all()
-    return templates.TemplateResponse("profile.html", ctx(request, db, profile_user=profile_user, is_own_profile=is_own, posts=posts))
+    followers_count = db.query(Follow).filter(Follow.followed_id == profile_user.id).count()
+    following_count = db.query(Follow).filter(Follow.follower_id == profile_user.id).count()
+    is_following = bool(current_user and db.query(Follow).filter(Follow.follower_id == current_user.id, Follow.followed_id == profile_user.id).first())
+    return templates.TemplateResponse("profile.html", ctx(request, db, profile_user=profile_user, is_own_profile=is_own, posts=posts, followers_count=followers_count, following_count=following_count, is_following=is_following))
+
+
+@router.post("/profile/{username}/follow")
+def toggle_follow(username: str, request: Request, db: Session = Depends(get_db)):
+    user = get_current_user(request, db)
+    if not user:
+        return RedirectResponse(url="/login", status_code=302)
+    profile_user = db.query(User).filter(User.username == username.lower()).first()
+    if not profile_user or profile_user.id == user.id:
+        return RedirectResponse(url=f"/profile/{username}", status_code=302)
+    follow = db.query(Follow).filter(Follow.follower_id == user.id, Follow.followed_id == profile_user.id).first()
+    if follow:
+        db.delete(follow)
+    else:
+        db.add(Follow(follower_id=user.id, followed_id=profile_user.id))
+    db.commit()
+    return RedirectResponse(url=f"/profile/{profile_user.username}", status_code=302)
 
 
 @router.get("/profile-edit", response_class=HTMLResponse)

@@ -23,6 +23,10 @@
                 <span class="profile-username">{{ profile_user.username }}</span>
                 {% if is_own_profile %}
                 <a href="/profile-edit" class="btn-edit">Edit Profile</a>
+                {% elif current_user %}
+                <form method="POST" action="/profile/{{ profile_user.username }}/follow">
+                    <button type="submit" class="btn-edit">{{ "Following" if is_following else "Follow" }}</button>
+                </form>
                 {% endif %}
             </div>
 
@@ -32,11 +36,11 @@
                     <span class="stat-label">posts</span>
                 </div>
                 <div class="stat">
-                    <span class="stat-num">0</span>
+                    <span class="stat-num">{{ followers_count }}</span>
                     <span class="stat-label">followers</span>
                 </div>
                 <div class="stat">
-                    <span class="stat-num">0</span>
+                    <span class="stat-num">{{ following_count }}</span>
                     <span class="stat-label">following</span>
                 </div>
             </div>
