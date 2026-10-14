@@ -3,9 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="InstaClone - A simple Instagram-like app built with FastAPI">
-    <title>{% block title %}InstaClone{% endblock %}</title>
+    <meta name="description" content="Luma - share the moments that stay with you">
+    <title>{% block title %}Luma{% endblock %}</title>
     <link rel="stylesheet" href="/static/style.css">
+    <script src="/static/app.js" defer></script>
 </head>
 <body>
 
@@ -13,12 +14,12 @@
 {% if current_user %}
 <nav class="navbar">
     <div class="nav-inner">
-        <a href="/feed" class="nav-logo">InstaClone</a>
+        <a href="/feed" class="nav-logo"><span class="brand-mark">✦</span> Luma</a>
         <div class="nav-links">
-            <a href="/feed">🏠 Feed</a>
-            <a href="/profile" class="nav-username">👤 {{ current_user.username }}</a>
-            <a href="/profile-edit">✏️ Edit</a>
-            <a href="/logout" class="logout-btn">🚪 Logout</a>
+            <a href="/feed"><span>⌂</span> Feed</a>
+            <a href="/profile" class="nav-username"><span class="nav-avatar">{{ current_user.username[0].upper() }}</span>{{ current_user.username }}</a>
+            <a href="/profile-edit">Edit profile</a>
+            <a href="/logout" class="logout-btn">Log out</a>
         </div>
     </div>
 </nav>

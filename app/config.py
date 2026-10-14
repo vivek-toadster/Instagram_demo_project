@@ -19,7 +19,18 @@ DATABASE_URL = URL.create(
     database=DB_NAME,
 )
 
-SECRET_KEY = os.getenv(
-    "SECRET_KEY",
-    "change-this-in-production",
-)
+APP_ENV = os.getenv("APP_ENV", "development").lower()
+SECRET_KEY = os.getenv("SECRET_KEY") or "change-this-in-production"
+if APP_ENV in {"production", "prod"} and (
+    SECRET_KEY == "change-this-in-production" or len(SECRET_KEY) < 32
+):
+    raise RuntimeError("SECRET_KEY must be a strong value in production")
+SESSION_MAX_AGE_SECONDS = int(os.getenv("SESSION_MAX_AGE_SECONDS", "604800"))
+COOKIE_SECURE = os.getenv("COOKIE_SECURE", "false").lower() == "true"
+
+# Neo4j is an optional graph store at this stage.  When NEO4J_DATABASE is not
+# set, the driver uses the server's configured default database.
+NEO4J_URI = os.getenv("NEO4J_URI")
+NEO4J_USERNAME = os.getenv("NEO4J_USERNAME")
+NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD")
+NEO4J_DATABASE = os.getenv("NEO4J_DATABASE")

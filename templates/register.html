@@ -9,15 +9,15 @@ toh form wapas dikhta hai errors ke saath aur purani values bhari rehti hain.
 -->
 {% extends "base.html" %}
 
-{% block title %}Sign Up - InstaClone{% endblock %}
+{% block title %}Sign Up - Luma{% endblock %}
 
 {% block content %}
 <div class="auth-container">
     <div>
         <!-- Registration Form -->
         <div class="auth-box">
-            <h1>InstaClone</h1>
-            <p class="subtitle">Apne doston ki photos aur videos dekhne ke liye sign up karein.</p>
+            <div class="auth-brand"><span class="brand-mark">✦</span> Luma</div>
+            <p class="subtitle">Share the little things that make life feel big.</p>
 
             <!-- Error Messages -->
             {% if errors %}
@@ -30,6 +30,7 @@ toh form wapas dikhta hai errors ke saath aur purani values bhari rehti hain.
 
             <!-- Registration Form -->
             <form method="POST" action="/register">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <div class="form-group">
                     <input type="email"
                            name="email"

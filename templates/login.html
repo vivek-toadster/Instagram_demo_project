@@ -10,15 +10,15 @@ Special features:
 -->
 {% extends "base.html" %}
 
-{% block title %}Login - InstaClone{% endblock %}
+{% block title %}Login - Luma{% endblock %}
 
 {% block content %}
 <div class="auth-container">
     <div>
         <!-- Login Form -->
         <div class="auth-box">
-            <h1>InstaClone</h1>
-            <p class="subtitle">Apne account mein login karein</p>
+            <div class="auth-brand"><span class="brand-mark">✦</span> Luma</div>
+            <p class="subtitle">Your people. Your moments. Your place.</p>
 
             <!-- Success message after registration -->
             {% if registered %}
@@ -38,6 +38,7 @@ Special features:
 
             <!-- Login Form -->
             <form method="POST" action="/login">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <div class="form-group">
                     <input type="text"
                            name="username"

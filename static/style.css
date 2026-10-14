@@ -1,18 +1,18 @@
 /* =============================================
-   InstaClone - Light UI (v2)
+   Luma - Light UI
    ============================================= */
 
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
 
 :root {
-  --bg-primary: #fafafc;
+  --bg-primary: #f8f8fb;
   --bg-secondary: #ffffff;
   --bg-card: #ffffff;
   --bg-input: #f2f2f6;
   --border: #e6e6ec;
-  --accent: #c13584;
-  --accent-2: #e1306c;
-  --accent-grad: linear-gradient(45deg, #f09433, #e6683c, #dc2743, #cc2366, #bc1888);
+  --accent: #7357e8;
+  --accent-2: #e45786;
+  --accent-grad: linear-gradient(120deg, #7357e8, #e45786 55%, #f2a65a);
   --text-primary: #1c1c22;
   --text-secondary: #5c5c68;
   --text-muted: #9a9aa6;
@@ -98,6 +98,25 @@ a:hover {
   -webkit-text-fill-color: transparent;
 }
 
+.brand-mark {
+  color: #7357e8;
+  -webkit-text-fill-color: #7357e8;
+  font-size: 1.15em;
+}
+
+.nav-avatar {
+  display: inline-flex;
+  width: 25px;
+  height: 25px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  margin-right: .35rem;
+  color: #fff;
+  font-size: .72rem;
+  background: var(--accent-grad);
+}
+
 .nav-links {
   display: flex;
   align-items: center;
@@ -161,6 +180,17 @@ a:hover {
   font-size: 2.1rem;
   font-weight: 700;
   margin-bottom: .4rem;
+  background: var(--accent-grad);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.auth-brand {
+  font-size: 2.1rem;
+  font-weight: 750;
+  letter-spacing: -.06em;
+  margin-bottom: .45rem;
   background: var(--accent-grad);
   -webkit-background-clip: text;
   background-clip: text;
@@ -329,6 +359,34 @@ input[type=file]::file-selector-button {
   max-width: 935px;
   margin: 0 auto;
   padding: 2rem 1rem 4rem;
+}
+
+.feed-intro {
+  max-width: 600px;
+  margin: .5rem auto 2rem;
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.feed-intro h1 {
+  font-size: clamp(1.65rem, 4vw, 2.35rem);
+  line-height: 1.1;
+  letter-spacing: -.06em;
+  margin: .25rem 0 .45rem;
+}
+
+.eyebrow {
+  color: var(--accent);
+  font-size: .7rem;
+  font-weight: 800;
+  letter-spacing: .16em;
+}
+
+.feed-subtitle {
+  color: var(--text-secondary);
+  font-size: .88rem;
 }
 
 /* ---------- Profile ---------- */
@@ -676,7 +734,7 @@ input[type=file]::file-selector-button {
   display: flex;
   flex-direction: column;
   gap: 1.8rem;
-  max-width: 600px;
+  max-width: 520px;
   margin: 0 auto;
 }
 
@@ -747,13 +805,16 @@ input[type=file]::file-selector-button {
 
 .post-img-wrap {
   width: 100%;
+  aspect-ratio: 1 / 1;
   background: #f0f0f4;
+  overflow: hidden;
 }
 
 .post-img {
   width: 100%;
-  max-height: 640px;
-  object-fit: contain;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
   display: block;
 }
 
@@ -793,6 +854,45 @@ input[type=file]::file-selector-button {
   color: var(--accent-2);
   background: rgba(225, 48, 108, .1);
 }
+
+.btn-like.liked .like-icon { color: var(--accent-2); }
+
+.async-form button:disabled {
+  opacity: .55;
+  cursor: wait;
+}
+
+.post-removing {
+  opacity: 0;
+  transform: scale(.98);
+  transition: opacity .2s, transform .2s;
+}
+
+.comment-new { animation: comment-in .25s ease both; }
+
+@keyframes comment-in {
+  from { opacity: 0; transform: translateY(5px); }
+  to { opacity: 1; transform: none; }
+}
+
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 1.5rem;
+  z-index: 200;
+  transform: translate(-50%, 1rem);
+  opacity: 0;
+  padding: .7rem 1rem;
+  border-radius: 999px;
+  color: #fff;
+  background: #24242d;
+  box-shadow: 0 10px 30px rgba(20, 20, 35, .2);
+  transition: opacity .2s, transform .2s;
+  font-size: .85rem;
+}
+
+.toast-visible { opacity: 1; transform: translate(-50%, 0); }
+.toast-error { background: var(--error); }
 
 .btn-delete {
   margin-left: auto;
@@ -923,6 +1023,11 @@ input[type=file]::file-selector-button {
     padding: .4rem .55rem;
     font-size: .8rem;
   }
+
+  .nav-links a:not(.nav-username):not(.logout-btn) span { display: none; }
+  .nav-username { max-width: 92px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .feed-intro { align-items: flex-start; flex-direction: column; }
+  .feed-intro .btn-new-post { align-self: stretch; text-align: center; }
 
   .profile-header {
     flex-direction: column;

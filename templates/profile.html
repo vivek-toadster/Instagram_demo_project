@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}{{ profile_user.username }} - InstaClone{% endblock %}
+{% block title %}{{ profile_user.username }} - Luma{% endblock %}
 
 {% block content %}
 <div class="page-container">
@@ -24,7 +24,8 @@
                 {% if is_own_profile %}
                 <a href="/profile-edit" class="btn-edit">Edit Profile</a>
                 {% elif current_user %}
-                <form method="POST" action="/profile/{{ profile_user.username }}/follow">
+                <form method="POST" action="/profile/{{ profile_user.username }}/follow" class="async-form follow-form">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                     <button type="submit" class="btn-edit">{{ "Following" if is_following else "Follow" }}</button>
                 </form>
                 {% endif %}
@@ -36,11 +37,11 @@
                     <span class="stat-label">posts</span>
                 </div>
                 <div class="stat">
-                    <span class="stat-num">{{ followers_count }}</span>
+                    <span class="stat-num" id="profile-followers-count">{{ followers_count }}</span>
                     <span class="stat-label">followers</span>
                 </div>
                 <div class="stat">
-                    <span class="stat-num">{{ following_count }}</span>
+                    <span class="stat-num" id="profile-following-count">{{ following_count }}</span>
                     <span class="stat-label">following</span>
                 </div>
             </div>
@@ -66,6 +67,7 @@
             {% if is_own_profile %}
             <form method="POST" action="/post/{{ post.id }}/delete" class="thumb-delete-form"
                   onsubmit="return confirm('Delete?')">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <button type="submit" class="thumb-delete-btn">🗑</button>
             </form>
             {% endif %}

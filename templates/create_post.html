@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Create Post - InstaClone{% endblock %}
+{% block title %}Create Post - Luma{% endblock %}
 
 {% block content %}
 <div class="auth-container">
@@ -12,6 +12,7 @@
             {% endif %}
 
             <form method="POST" action="/post/create" enctype="multipart/form-data">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <div class="form-group">
                     <label>Image *</label>
                     <input type="file" name="image" accept="image/*" required

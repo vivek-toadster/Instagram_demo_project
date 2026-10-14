@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from sqlalchemy import Column, Integer, String, DateTime, Text, ForeignKey, UniqueConstraint
+from sqlalchemy import Column, Integer, String, DateTime, Text, ForeignKey, UniqueConstraint, JSON
 from sqlalchemy.orm import relationship
 from app.database import Base
 
@@ -31,7 +31,7 @@ class Post(Base):
     caption = Column(Text, nullable=True)
     image_path = Column(String(500), nullable=False)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
 
     author = relationship("User", back_populates="posts")
     likes = relationship("Like", back_populates="post", cascade="all, delete-orphan")
@@ -46,7 +46,7 @@ class Like(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    post_id = Column(Integer, ForeignKey("posts.id"), nullable=False)
+    post_id = Column(Integer, ForeignKey("posts.id"), nullable=False, index=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
@@ -62,7 +62,7 @@ class Comment(Base):
     id = Column(Integer, primary_key=True, index=True)
     body = Column(Text, nullable=False)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    post_id = Column(Integer, ForeignKey("posts.id"), nullable=False)
+    post_id = Column(Integer, ForeignKey("posts.id"), nullable=False, index=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     author = relationship("User", back_populates="comments")
@@ -77,3 +77,18 @@ class Follow(Base):
     followed_id = Column(Integer, ForeignKey("users.id"), nullable=False)
 
     __table_args__ = (UniqueConstraint("follower_id", "followed_id", name="uq_follower_followed"),)
+
+
+class GraphOutboxEvent(Base):
+    __tablename__ = "graph_outbox_events"
+
+    event_id = Column(String(36), primary_key=True)
+    event_type = Column(String(50), nullable=False, index=True)
+    payload = Column(JSON, nullable=False)
+    status = Column(String(20), nullable=False, default="pending", index=True)
+    retry_count = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime, nullable=False)
+    updated_at = Column(DateTime, nullable=False)
+    next_attempt_at = Column(DateTime, nullable=False, index=True)
+    processed_at = Column(DateTime, nullable=True)
+    last_error = Column(Text, nullable=True)

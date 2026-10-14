@@ -1,18 +1,22 @@
 {% extends "base.html" %}
-{% block title %}Feed - InstaClone{% endblock %}
+{% block title %}Home - Luma{% endblock %}
 
 {% block content %}
 <div class="page-container">
 
-    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem;">
-        <h2 style="font-size:1.1rem; font-weight:600; color:var(--text-secondary);">Latest Posts</h2>
+    <div class="feed-intro">
+        <div>
+            <p class="eyebrow">YOUR DAILY EDIT</p>
+            <h1>Moments worth keeping.</h1>
+            <p class="feed-subtitle">A calmer place for the people and stories you care about.</p>
+        </div>
         <a href="/post/create" class="btn-new-post">+ New Post</a>
     </div>
 
     {% if posts %}
     <div class="feed-grid">
         {% for post in posts %}
-        <div class="post-card">
+        <article class="post-card" data-post-id="{{ post.id }}">
 
             <!-- Author Header -->
             <div class="post-header">
@@ -29,17 +33,19 @@
             <!-- Actions: Like + Delete -->
             <div class="post-actions">
                 <!-- Like button -->
-                <form method="POST" action="/post/{{ post.id }}/like" style="display:inline;">
-                    <button type="submit" class="btn-like {% if post.id in liked_post_ids %}liked{% endif %}">
-                        {% if post.id in liked_post_ids %}❤️{% else %}🤍{% endif %}
-                        {{ post.likes|length }}
+                <form method="POST" action="/post/{{ post.id }}/like" class="async-form like-form" style="display:inline;">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <button type="submit" class="btn-like {% if post.id in liked_post_ids %}liked{% endif %}" aria-label="Like post">
+                        <span class="like-icon">{% if post.id in liked_post_ids %}♥{% else %}♡{% endif %}</span>
+                        <span class="like-count">{{ post.likes|length }}</span>
                     </button>
                 </form>
 
                 <!-- Delete (only owner) -->
                 {% if current_user and current_user.id == post.user_id %}
-                <form method="POST" action="/post/{{ post.id }}/delete"
+                <form method="POST" action="/post/{{ post.id }}/delete" class="async-form delete-form"
                       style="display:inline;" onsubmit="return confirm('Delete this post?')">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                     <button type="submit" class="btn-delete">🗑 Delete</button>
                 </form>
                 {% endif %}
@@ -67,13 +73,14 @@
                 {% endif %}
 
                 <!-- Add Comment Form -->
-                <form method="POST" action="/post/{{ post.id }}/comment" class="comment-form">
+                <form method="POST" action="/post/{{ post.id }}/comment" class="comment-form async-form">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                     <input type="text" name="body" placeholder="Add a comment..." maxlength="300" required class="comment-input">
                     <button type="submit" class="comment-submit">Post</button>
                 </form>
             </div>
 
-        </div>
+        </article>
         {% endfor %}
     </div>
 

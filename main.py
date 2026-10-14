@@ -1,18 +1,105 @@
 import os
-from fastapi import FastAPI
+from contextlib import asynccontextmanager
+import logging
+from time import perf_counter
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
-from app.config import SECRET_KEY
+from app.config import COOKIE_SECURE, SECRET_KEY
 from app.routes import router
+from app.neo4j_client import initialize_neo4j, neo4j_status, shutdown_neo4j
+from app.health import check_readiness
+from app.observability import increment, log_event, prometheus_text
 
-app = FastAPI()
+logger = logging.getLogger(__name__)
 
 
-app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY)
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    try:
+        initialize_neo4j()
+    except Exception:
+        # PostgreSQL remains the primary store; a graph outage must not prevent
+        # the existing application from starting.
+        logger.exception("Neo4j initialization failed; graph features are unavailable")
+    try:
+        yield
+    finally:
+        shutdown_neo4j()
+
+app = FastAPI(lifespan=lifespan)
+
+
+@app.middleware("http")
+async def request_observability(request: Request, call_next):
+    started = perf_counter()
+    status_code = 500
+    try:
+        response = await call_next(request)
+        status_code = response.status_code
+        return response
+    except Exception:
+        raise
+    finally:
+        elapsed_ms = round((perf_counter() - started) * 1000, 2)
+        increment("http_requests_total")
+        if status_code >= 500:
+            increment("http_request_failures_total")
+        log_event(
+            "http_request",
+            method=request.method,
+            path=request.url.path,
+            status_code=status_code,
+            latency_ms=elapsed_ms,
+        )
+
+
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=SECRET_KEY,
+    same_site="lax",
+    https_only=COOKIE_SECURE,
+)
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 os.makedirs("uploads", exist_ok=True)
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 app.include_router(router)
+
+
+@app.get("/health/neo4j")
+def neo4j_health():
+    connected, _error = neo4j_status()
+    if connected:
+        return {"status": "ok", "service": "neo4j"}
+    return JSONResponse(
+        status_code=503,
+        content={"status": "unavailable", "service": "neo4j", "detail": "Neo4j unavailable"},
+    )
+
+
+@app.get("/health/live")
+def liveness_health():
+    return {"status": "ok", "service": "instagram_clone"}
+
+
+@app.get("/health/ready")
+def readiness_health():
+    readiness = check_readiness()
+    content = {
+        "status": "ok" if readiness.ready else "unavailable",
+        "service": "instagram_clone",
+        "dependencies": {
+            "postgres": "ok" if readiness.postgres else "unavailable",
+            "neo4j": "ok" if readiness.neo4j else "unavailable",
+        },
+    }
+    return JSONResponse(status_code=200 if readiness.ready else 503, content=content)
+
+
+@app.get("/metrics", response_class=PlainTextResponse)
+def metrics():
+    return prometheus_text()

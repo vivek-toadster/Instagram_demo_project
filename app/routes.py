@@ -1,11 +1,14 @@
 import os
+import hmac
+import secrets
 import shutil
-from fastapi import APIRouter, Request, Depends, Form, UploadFile, File
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import APIRouter, Request, Depends, Form, UploadFile, File, Query, HTTPException
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.config import COOKIE_SECURE, SESSION_MAX_AGE_SECONDS
 from app.models import User, Post, Like, Comment, Follow
 from app.auth import (
     hash_password,
@@ -13,6 +16,9 @@ from app.auth import (
     create_session_token,
     get_user_id_from_token,
 )
+from app.graph_outbox import enqueue_graph_event
+from app.feed import get_feed_posts
+from app.hashtags import extract_hashtags
 
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
@@ -32,9 +38,39 @@ def get_current_user(request: Request, db: Session) -> User | None:
     return db.query(User).filter(User.id == user_id).first()
 
 
+def get_csrf_token(request: Request) -> str:
+    token = request.session.get("csrf_token")
+    if not token:
+        token = secrets.token_urlsafe(32)
+        request.session["csrf_token"] = token
+    return token
+
+
+def validate_csrf(request: Request, submitted_token: str) -> None:
+    expected_token = request.session.get("csrf_token")
+    if not expected_token or not hmac.compare_digest(expected_token, submitted_token):
+        raise HTTPException(status_code=403, detail="Invalid CSRF token")
+
+
+def wants_json(request: Request) -> bool:
+    """Return true for fetch requests made by the interactive UI."""
+    return request.headers.get("x-requested-with", "").lower() == "xmlhttprequest"
+
+
+def action_response(request: Request, payload: dict, fallback: str = "/feed"):
+    if wants_json(request):
+        return JSONResponse(payload)
+    return _back(request, fallback)
+
+
 def ctx(request, db, **kwargs):
     """Build a base template context with current_user."""
-    return {"request": request, "current_user": get_current_user(request, db), **kwargs}
+    return {
+        "request": request,
+        "current_user": get_current_user(request, db),
+        "csrf_token": get_csrf_token(request),
+        **kwargs,
+    }
 
 
 # ── Home ─────────────────────────────────────────────────────
@@ -63,8 +99,10 @@ def register_user(
     password: str = Form(...),
     confirm_password: str = Form(...),
     full_name: str = Form(""),
+    csrf_token: str = Form(...),
     db: Session = Depends(get_db),
 ):
+    validate_csrf(request, csrf_token)
     errors = []
     if password != confirm_password:
         errors.append("Passwords didn't match!")
@@ -90,6 +128,12 @@ def register_user(
         full_name=full_name.strip() if full_name else None,
     )
     db.add(new_user)
+    db.flush()
+    enqueue_graph_event(
+        db,
+        "user.created",
+        {"user_id": new_user.id, "username": new_user.username},
+    )
     db.commit()
     return RedirectResponse(url="/login?registered=true", status_code=302)
 
@@ -107,8 +151,10 @@ def login_user(
     request: Request,
     username: str = Form(...),
     password: str = Form(...),
+    csrf_token: str = Form(...),
     db: Session = Depends(get_db),
 ):
+    validate_csrf(request, csrf_token)
     user = db.query(User).filter(
         (User.username == username.lower().strip()) |
         (User.email == username.lower().strip())
@@ -122,7 +168,14 @@ def login_user(
 
     token = create_session_token(user.id)
     response = RedirectResponse(url="/feed", status_code=302)
-    response.set_cookie(key="session_token", value=token, httponly=True, samesite="lax", max_age=7*24*3600)
+    response.set_cookie(
+        key="session_token",
+        value=token,
+        httponly=True,
+        secure=COOKIE_SECURE,
+        samesite="lax",
+        max_age=SESSION_MAX_AGE_SECONDS,
+    )
     return response
 
 
@@ -159,7 +212,13 @@ def user_profile(username: str, request: Request, db: Session = Depends(get_db))
 
 
 @router.post("/profile/{username}/follow")
-def toggle_follow(username: str, request: Request, db: Session = Depends(get_db)):
+def toggle_follow(
+    username: str,
+    request: Request,
+    csrf_token: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    validate_csrf(request, csrf_token)
     user = get_current_user(request, db)
     if not user:
         return RedirectResponse(url="/login", status_code=302)
@@ -169,10 +228,30 @@ def toggle_follow(username: str, request: Request, db: Session = Depends(get_db)
     follow = db.query(Follow).filter(Follow.follower_id == user.id, Follow.followed_id == profile_user.id).first()
     if follow:
         db.delete(follow)
+        event_type = "follow.deleted"
+        is_following = False
     else:
         db.add(Follow(follower_id=user.id, followed_id=profile_user.id))
+        event_type = "follow.created"
+        is_following = True
+    enqueue_graph_event(
+        db,
+        event_type,
+        {"follower_id": user.id, "followed_id": profile_user.id},
+    )
     db.commit()
-    return RedirectResponse(url=f"/profile/{profile_user.username}", status_code=302)
+    followers_count = db.query(Follow).filter(Follow.followed_id == profile_user.id).count()
+    following_count = db.query(Follow).filter(Follow.follower_id == user.id).count()
+    return action_response(
+        request,
+        {
+            "ok": True,
+            "is_following": is_following,
+            "followers_count": followers_count,
+            "following_count": following_count,
+        },
+        f"/profile/{profile_user.username}",
+    )
 
 
 @router.get("/profile-edit", response_class=HTMLResponse)
@@ -188,8 +267,10 @@ def edit_profile(
     request: Request,
     full_name: str = Form(""),
     bio: str = Form(""),
+    csrf_token: str = Form(...),
     db: Session = Depends(get_db),
 ):
+    validate_csrf(request, csrf_token)
     user = get_current_user(request, db)
     if not user:
         return RedirectResponse(url="/login", status_code=302)
@@ -201,12 +282,24 @@ def edit_profile(
 
 # ── Feed ─────────────────────────────────────────────────────
 @router.get("/feed", response_class=HTMLResponse)
-def feed(request: Request, db: Session = Depends(get_db)):
+def feed(
+    request: Request,
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
+    db: Session = Depends(get_db),
+):
     user = get_current_user(request, db)
     if not user:
         return RedirectResponse(url="/login", status_code=302)
-    posts = db.query(Post).order_by(Post.created_at.desc()).all()
-    return templates.TemplateResponse("feed.html", ctx(request, db, posts=posts))
+    posts = get_feed_posts(db, user.id, page=page, page_size=limit)
+    liked_post_ids = {
+        like.post_id
+        for like in db.query(Like).filter(Like.user_id == user.id).all()
+    }
+    return templates.TemplateResponse(
+        "feed.html",
+        ctx(request, db, posts=posts, liked_post_ids=liked_post_ids),
+    )
 
 
 # ── Create Post ──────────────────────────────────────────────
@@ -223,8 +316,10 @@ async def create_post(
     request: Request,
     caption: str = Form(""),
     image: UploadFile = File(...),
+    csrf_token: str = Form(...),
     db: Session = Depends(get_db),
 ):
+    validate_csrf(request, csrf_token)
     user = get_current_user(request, db)
     if not user:
         return RedirectResponse(url="/login", status_code=302)
@@ -247,27 +342,48 @@ async def create_post(
 
     post = Post(caption=caption.strip(), image_path=filename, user_id=user.id)
     db.add(post)
+    db.flush()
+    enqueue_graph_event(
+        db,
+        "post.created",
+        {
+            "post_id": post.id,
+            "user_id": post.user_id,
+            "caption": post.caption,
+            "image_path": post.image_path,
+            "created_at": post.created_at.isoformat() if post.created_at else None,
+            "hashtags": extract_hashtags(post.caption),
+        },
+    )
     db.commit()
     return RedirectResponse(url="/feed", status_code=302)
 
 
 # ── Delete Post ──────────────────────────────────────────────
 @router.post("/post/{post_id}/delete")
-def delete_post(post_id: int, request: Request, db: Session = Depends(get_db)):
+def delete_post(
+    post_id: int,
+    request: Request,
+    csrf_token: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    validate_csrf(request, csrf_token)
     user = get_current_user(request, db)
     if not user:
         return RedirectResponse(url="/login", status_code=302)
 
     post = db.query(Post).filter(Post.id == post_id, Post.user_id == user.id).first()
     if post:
+        deleted_post_id = post.id
         # Delete image file
         img_path = os.path.join(UPLOAD_DIR, post.image_path)
         if os.path.exists(img_path):
             os.remove(img_path)
         db.delete(post)
+        enqueue_graph_event(db, "post.deleted", {"post_id": deleted_post_id})
         db.commit()
 
-    return RedirectResponse(url="/feed", status_code=302)
+    return action_response(request, {"ok": True, "deleted_post_id": post_id})
 
 
 # ── Like / Unlike ────────────────────────────────────────────
@@ -277,7 +393,13 @@ def _back(request: Request, fallback: str = "/feed") -> RedirectResponse:
 
 
 @router.post("/post/{post_id}/like")
-def toggle_like(post_id: int, request: Request, db: Session = Depends(get_db)):
+def toggle_like(
+    post_id: int,
+    request: Request,
+    csrf_token: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    validate_csrf(request, csrf_token)
     user = get_current_user(request, db)
     if not user:
         return RedirectResponse(url="/login", status_code=302)
@@ -289,10 +411,19 @@ def toggle_like(post_id: int, request: Request, db: Session = Depends(get_db)):
     existing = db.query(Like).filter(Like.user_id == user.id, Like.post_id == post_id).first()
     if existing:
         db.delete(existing)  # already liked -> unlike
+        event_type = "like.deleted"
+        liked = False
     else:
         db.add(Like(user_id=user.id, post_id=post_id))
+        event_type = "like.created"
+        liked = True
+    enqueue_graph_event(db, event_type, {"user_id": user.id, "post_id": post_id})
     db.commit()
-    return _back(request)
+    likes_count = db.query(Like).filter(Like.post_id == post_id).count()
+    return action_response(
+        request,
+        {"ok": True, "liked": liked, "likes_count": likes_count},
+    )
 
 
 # ── Comments ─────────────────────────────────────────────────
@@ -301,8 +432,10 @@ def add_comment(
     post_id: int,
     request: Request,
     body: str = Form(...),
+    csrf_token: str = Form(...),
     db: Session = Depends(get_db),
 ):
+    validate_csrf(request, csrf_token)
     user = get_current_user(request, db)
     if not user:
         return RedirectResponse(url="/login", status_code=302)
@@ -310,13 +443,38 @@ def add_comment(
     post = db.query(Post).filter(Post.id == post_id).first()
     body = body.strip()
     if post and body:
-        db.add(Comment(body=body, user_id=user.id, post_id=post_id))
+        comment = Comment(body=body, user_id=user.id, post_id=post_id)
+        db.add(comment)
+        db.flush()
+        enqueue_graph_event(
+            db,
+            "comment.created",
+            {"comment_id": comment.id, "user_id": user.id, "post_id": post_id},
+        )
         db.commit()
-    return _back(request)
+        return action_response(
+            request,
+            {
+                "ok": True,
+                "comment": {
+                    "id": comment.id,
+                    "username": user.username,
+                    "body": comment.body,
+                    "created_at": comment.created_at.strftime("%d %b"),
+                },
+            },
+        )
+    return action_response(request, {"ok": False, "error": "Comment cannot be empty."})
 
 
 @router.post("/comment/{comment_id}/delete")
-def delete_comment(comment_id: int, request: Request, db: Session = Depends(get_db)):
+def delete_comment(
+    comment_id: int,
+    request: Request,
+    csrf_token: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    validate_csrf(request, csrf_token)
     user = get_current_user(request, db)
     if not user:
         return RedirectResponse(url="/login", status_code=302)
@@ -324,6 +482,23 @@ def delete_comment(comment_id: int, request: Request, db: Session = Depends(get_
     comment = db.query(Comment).filter(Comment.id == comment_id).first()
     # Comment author or the post owner may delete it
     if comment and (comment.user_id == user.id or comment.post.user_id == user.id):
+        comment_user_id = comment.user_id
+        comment_post_id = comment.post_id
         db.delete(comment)
+        has_remaining_comments = db.query(Comment).filter(
+            Comment.user_id == comment_user_id,
+            Comment.post_id == comment_post_id,
+            Comment.id != comment_id,
+        ).first() is not None
+        enqueue_graph_event(
+            db,
+            "comment.deleted",
+            {
+                "comment_id": comment_id,
+                "user_id": comment_user_id,
+                "post_id": comment_post_id,
+                "has_remaining_comments": has_remaining_comments,
+            },
+        )
         db.commit()
-    return _back(request)
+    return action_response(request, {"ok": True, "comment_id": comment_id})

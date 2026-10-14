@@ -1,10 +1,10 @@
 from passlib.context import CryptContext
-from itsdangerous import URLSafeSerializer
-from app.config import SECRET_KEY
+from itsdangerous import URLSafeTimedSerializer
+from app.config import SECRET_KEY, SESSION_MAX_AGE_SECONDS
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-serializer = URLSafeSerializer(SECRET_KEY)
+serializer = URLSafeTimedSerializer(SECRET_KEY)
 
 
 def hash_password(password: str) -> str:
@@ -21,7 +21,7 @@ def create_session_token(user_id: int) -> str:
 
 def get_user_id_from_token(token: str) -> int | None:
     try:
-        data = serializer.loads(token)
+        data = serializer.loads(token, max_age=SESSION_MAX_AGE_SECONDS)
         return data.get("user_id")
     except Exception:
         return None

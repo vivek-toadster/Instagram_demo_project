@@ -1,23 +1,57 @@
-# Instagram Clone
+# Luma
 
-A simple Instagram-inspired web application built using **FastAPI and PostgreSQL**. It allows users to create an account, log in securely, manage their profiles, and update their personal information.
+Luma is a small Instagram-style social web application built with FastAPI. It supports authentication, profiles, posts, likes, comments, follows, a personalized feed, and a PostgreSQL-to-Neo4j graph projection.
+
+PostgreSQL is the source of truth. Neo4j is a rebuildable read-side graph used for relationship-aware feed candidates. This keeps normal app operations safe even when Neo4j is temporarily unavailable.
 
 ## Features
 
-- **User Registration & Login** – Create an account and log in securely.
-- **Password Hashing** – Store passwords securely using hashing.
-- **User Profile** – View personal profile information.
-- **Edit Profile** – Update profile details.
-- **Session Authentication** – Maintain user login sessions.
+- User registration and login with username or email
+- Secure password hashing and session authentication
+- User profiles, bios, follower/following counts, and profile editing
+- Image posts with captions and hashtag extraction
+- Personalized feed with ranking and PostgreSQL fallback
+- Likes, comments, follows, and post/comment deletion
+- AJAX actions that update the UI without a full-page refresh
+- Transactional PostgreSQL outbox and Neo4j graph projection
+- Health endpoints, metrics, retries, idempotency, and dead-letter handling
 
-## Tech Stack
+## Application flow
 
-- **Backend:** Python, FastAPI
-- **Database:** PostgreSQL
-- **ORM:** SQLAlchemy
-- **Migrations:** Alembic
-- **Templating:** Jinja2
-- **Frontend:** HTML, CSS
+```text
+Browser
+  |
+  | HTML pages + AJAX actions
+  v
+FastAPI routes (app/routes.py)
+  |
+  +--> PostgreSQL / SQLAlchemy  <-- source of truth
+  |       users, posts, likes,
+  |       comments, follows,
+  |       graph_outbox_events
+  |
+  +--> Transactional graph event
+              |
+              v
+       graph_outbox_worker
+              |
+              v
+          Neo4j graph projection
+              |
+              v
+       Relationship-aware feed candidates
+```
+
+For a user action, the route commits the business record and an outbox event to PostgreSQL in the same transaction. The worker later applies the event to Neo4j. The feed asks Neo4j for relationship candidates, loads the real posts from PostgreSQL, and ranks them. If Neo4j is unavailable, the feed falls back to PostgreSQL.
+
+## Technology stack
+
+- Python, FastAPI, and Uvicorn
+- PostgreSQL, SQLAlchemy, and Alembic
+- Neo4j Python driver
+- Jinja2 templates
+- Vanilla HTML, CSS, and JavaScript
+- Pytest
 
 ## Installation & Setup
 
@@ -53,4 +87,3 @@ A simple Instagram-inspired web application built using **FastAPI and PostgreSQL
 ## Project Goal
 
 The goal of this project is to build a basic Instagram-style application while learning user authentication, database integration, profile management, and backend development with FastAPI.
-

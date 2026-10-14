@@ -9,7 +9,7 @@ Sirf logged-in user apna profile edit kar sakta hai.
 -->
 {% extends "base.html" %}
 
-{% block title %}Edit Profile - InstaClone{% endblock %}
+{% block title %}Edit Profile - Luma{% endblock %}
 
 {% block content %}
 <div class="edit-container">
@@ -17,6 +17,7 @@ Sirf logged-in user apna profile edit kar sakta hai.
         <h2>Edit Profile</h2>
 
         <form method="POST" action="/profile-edit" class="edit-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <!-- Full Name -->
             <div class="form-row">
                 <label class="form-label">Name</label>
