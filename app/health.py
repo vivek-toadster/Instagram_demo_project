@@ -21,6 +21,7 @@ class Readiness:
 
     @property
     def ready(self) -> bool:
+        """Return whether both PostgreSQL and Neo4j are currently reachable."""
         return self.postgres and self.neo4j
 
 
@@ -29,6 +30,7 @@ _cached: tuple[float, Readiness] | None = None
 
 
 def _cache_seconds() -> float:
+    """Read the readiness cache duration from the environment safely."""
     try:
         return max(0.0, float(os.getenv("HEALTH_CHECK_CACHE_SECONDS", "5")))
     except ValueError:
@@ -36,6 +38,7 @@ def _cache_seconds() -> float:
 
 
 def check_readiness(force: bool = False) -> Readiness:
+    """Check both dependencies, using a short cache unless forced."""
     global _cached
     now = time.monotonic()
     with _lock:
@@ -61,7 +64,7 @@ def check_readiness(force: bool = False) -> Readiness:
 
 
 def reset_cache() -> None:
+    """Clear the cached readiness result, primarily for tests and recovery."""
     global _cached
     with _lock:
         _cached = None
-

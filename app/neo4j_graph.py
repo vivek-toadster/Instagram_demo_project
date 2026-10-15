@@ -27,19 +27,16 @@ PERSONALIZED_CANDIDATE_POST_QUERY = """
 CALL () {
     MATCH (viewer:User {id: $user_id})-[:FOLLOWS]->(:User)-[:CREATED]->(post:Post)
     WHERE post.user_id <> $user_id
-      AND NOT EXISTS { MATCH (viewer)-[:LIKED]->(post) }
     RETURN post.id AS post_id, 1 AS degree, 0.0 AS interest_score
     UNION
     MATCH (viewer:User {id: $user_id})-[:FOLLOWS]->(:User)-[:FOLLOWS]->(:User)-[:CREATED]->(post:Post)
     WHERE post.user_id <> $user_id
-      AND NOT EXISTS { MATCH (viewer)-[:LIKED]->(post) }
     RETURN post.id AS post_id, 2 AS degree, 0.0 AS interest_score
     UNION
     MATCH (viewer:User {id: $user_id})-[:LIKED]->(liked_post:Post)
           <-[:LIKED]-(similar_user:User)-[:LIKED]->(post:Post)
     WHERE similar_user.id <> $user_id
       AND post.user_id <> $user_id
-      AND NOT EXISTS { MATCH (viewer)-[:LIKED]->(post) }
     RETURN post.id AS post_id, 3 AS degree,
            CASE WHEN count(DISTINCT liked_post) > 10
                 THEN 1.0
@@ -49,7 +46,6 @@ CALL () {
     MATCH (viewer:User {id: $user_id})-[:LIKED]->(:Post)-[:HAS_TAG]->(tag:Hashtag)
           <-[:HAS_TAG]-(post:Post)
     WHERE post.user_id <> $user_id
-      AND NOT EXISTS { MATCH (viewer)-[:LIKED]->(post) }
     RETURN post.id AS post_id, 3 AS degree,
            CASE WHEN count(DISTINCT tag) > 5
                 THEN 1.0
@@ -72,11 +68,13 @@ def _run(operation: Callable, *args, **kwargs) -> None:
 
 
 def _execute(statement: str, **parameters) -> None:
+    """Execute one Cypher statement in a managed Neo4j session."""
     with neo4j_client.session() as session:
         session.run(statement, parameters).consume()
 
 
 def get_candidate_post_ids(user_id: int, limit: int) -> list[tuple[int, int]]:
+    """Return followed and second-degree post candidates with relationship depth."""
     """Return bounded, de-duplicated graph candidates and their shortest degree."""
     with neo4j_client.session() as session:
         records = session.run(CANDIDATE_POST_QUERY, user_id=user_id, limit=limit)
@@ -84,6 +82,7 @@ def get_candidate_post_ids(user_id: int, limit: int) -> list[tuple[int, int]]:
 
 
 def get_personalized_candidate_post_ids(user_id: int, limit: int) -> list[tuple[int, int, float]]:
+    """Return graph candidates enriched with collaborative interest scores."""
     """Return bounded candidates with relationship degree and collaborative interest."""
     with neo4j_client.session() as session:
         records = session.run(
@@ -164,6 +163,7 @@ def apply_graph_event(event_type: str, payload: dict) -> None:
 
 
 def upsert_user(user_id: int, username: str) -> None:
+    """Idempotently create or update a user node."""
     _run(
         _execute,
         """
@@ -176,6 +176,7 @@ def upsert_user(user_id: int, username: str) -> None:
 
 
 def upsert_post(post_id: int, user_id: int, caption: str | None, image_path: str, created_at) -> None:
+    """Idempotently create a post node and its author relationship."""
     _run(
         _execute,
         """
@@ -196,6 +197,7 @@ def upsert_post(post_id: int, user_id: int, caption: str | None, image_path: str
 
 
 def set_follow(follower_id: int, followed_id: int, following: bool) -> None:
+    """Create or remove a FOLLOWS relationship between two users."""
     statement = (
         """
         MERGE (follower:User {id: $follower_id})
@@ -212,6 +214,7 @@ def set_follow(follower_id: int, followed_id: int, following: bool) -> None:
 
 
 def set_like(user_id: int, post_id: int, liked: bool) -> None:
+    """Create or remove a LIKED relationship between a user and post."""
     statement = (
         """
         MERGE (user:User {id: $user_id})
@@ -228,6 +231,7 @@ def set_like(user_id: int, post_id: int, liked: bool) -> None:
 
 
 def add_comment_relationship(user_id: int, post_id: int) -> None:
+    """Create a COMMENTED_ON relationship for a user's post comment."""
     _run(
         _execute,
         """
@@ -241,6 +245,7 @@ def add_comment_relationship(user_id: int, post_id: int) -> None:
 
 
 def remove_comment_relationship(user_id: int, post_id: int) -> None:
+    """Remove a comment relationship after the user's last comment is deleted."""
     _run(
         _execute,
         """
@@ -253,6 +258,7 @@ def remove_comment_relationship(user_id: int, post_id: int) -> None:
 
 
 def delete_post(post_id: int) -> None:
+    """Delete a post node and all connected graph relationships."""
     _run(
         _execute,
         """

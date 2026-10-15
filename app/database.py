@@ -14,9 +14,10 @@ Base = declarative_base()
 
 
 def get_db():
-
+    """Yield one database session to a request and always close it afterward."""
     db = SessionLocal()
     try:
         yield db  
     finally:
         db.close()  
+"""SQLAlchemy engine, declarative model base, and request-scoped sessions."""

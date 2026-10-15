@@ -18,6 +18,7 @@ get_candidate_post_ids = get_personalized_candidate_post_ids
 
 @dataclass(frozen=True)
 class FeedRankingConfig:
+    """Weights and limits controlling personalized feed ranking."""
     recency_weight: float = 0.45
     social_weight: float = 0.25
     engagement_weight: float = 0.15
@@ -28,6 +29,7 @@ class FeedRankingConfig:
 
     @classmethod
     def from_environment(cls) -> "FeedRankingConfig":
+        """Build ranking settings from environment overrides with safe bounds."""
         return cls(
             recency_weight=_positive_float("FEED_RECENCY_WEIGHT", cls.recency_weight),
             social_weight=_positive_float("FEED_SOCIAL_WEIGHT", cls.social_weight),
@@ -43,6 +45,7 @@ class FeedRankingConfig:
 
 @dataclass(frozen=True)
 class FeedRow:
+    """A post plus the aggregate and graph signals used to rank it."""
     post: Post
     likes: int
     comments: int
@@ -51,6 +54,7 @@ class FeedRow:
 
 
 def _positive_float(name: str, default: float) -> float:
+    """Read a positive floating-point setting or return its default."""
     try:
         value = float(os.getenv(name, default))
     except (TypeError, ValueError):
@@ -59,6 +63,7 @@ def _positive_float(name: str, default: float) -> float:
 
 
 def _bounded_int(name: str, default: int, minimum: int, maximum: int) -> int:
+    """Read an integer setting and clamp it to an allowed range."""
     try:
         value = int(os.getenv(name, default))
     except (TypeError, ValueError):
@@ -67,6 +72,7 @@ def _bounded_int(name: str, default: int, minimum: int, maximum: int) -> int:
 
 
 def normalize_weights(config: FeedRankingConfig) -> tuple[float, float, float, float]:
+    """Normalize ranking weights so their combined contribution equals one."""
     total = (
         config.recency_weight
         + config.social_weight
@@ -114,6 +120,7 @@ def deduplicate_personalized_candidates(
 
 
 def _post_rows_query(db: Session):
+    """Build the eager-loaded query used by ranked and fallback feeds."""
     like_count = (
         db.query(func.count(Like.id))
         .filter(Like.post_id == Post.id)
@@ -147,6 +154,7 @@ def load_post_rows(
     limit: int | None = None,
     exclude_liked_user_id: int | None = None,
 ) -> list[FeedRow]:
+    """Load posts with aggregate engagement counts and optional graph IDs."""
     query = _post_rows_query(db)
     if post_ids is not None:
         if not post_ids:
@@ -165,12 +173,14 @@ def load_post_rows(
 
 
 def _as_utc(value: datetime | None, now: datetime) -> datetime:
+    """Treat database timestamps as UTC so age calculations are consistent."""
     if value is None:
         return now
     return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value
 
 
 def score_row(row: FeedRow, config: FeedRankingConfig, now: datetime) -> float:
+    """Calculate a weighted score from recency, relationship, engagement, and interest."""
     age_hours = max(0.0, (now - _as_utc(row.post.created_at, now)).total_seconds() / 3600)
     recency = math.exp(-math.log(2) * age_hours / config.recency_half_life_hours)
     social = 1.0 if row.degree == 1 else 0.5 if row.degree == 2 else 0.0
@@ -186,16 +196,19 @@ def score_row(row: FeedRow, config: FeedRankingConfig, now: datetime) -> float:
 
 
 def rank_rows(rows: list[FeedRow], config: FeedRankingConfig, now: datetime | None = None) -> list[FeedRow]:
+    """Sort feed rows by score and use post ID as a deterministic tie-breaker."""
     now = now or datetime.now(timezone.utc)
     return sorted(rows, key=lambda row: (-score_row(row, config, now), -row.post.id))
 
 
 def load_fallback_feed(db: Session, page: int, page_size: int) -> list[Post]:
+    """Load a recent PostgreSQL-only page when graph candidates are unavailable."""
     offset = (page - 1) * page_size
     return [row.post for row in load_post_rows(db, offset=offset, limit=page_size)]
 
 
 def get_feed_posts(db: Session, user_id: int, page: int = 1, page_size: int | None = None) -> list[Post]:
+    """Build the personalized feed and safely fall back on any graph failure."""
     config = FeedRankingConfig.from_environment()
     page = max(page, 1)
     page_size = page_size or config.page_size
@@ -216,7 +229,6 @@ def get_feed_posts(db: Session, user_id: int, page: int = 1, page_size: int | No
         rows = load_post_rows(
             db,
             post_ids=list(signals_by_post_id),
-            exclude_liked_user_id=user_id,
         )
         if not rows:
             increment("feed_fallback_total")

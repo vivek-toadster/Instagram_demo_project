@@ -17,7 +17,7 @@ from app.graph_outbox import (
     utcnow,
     validate_event_payload,
 )
-from app.hashtags import extract_hashtags
+from app.hashtags import extract_hashtags, hashtags_for_image
 from app.models import GraphOutboxEvent
 from app.neo4j_graph import apply_graph_event
 
@@ -59,6 +59,12 @@ def test_caption_hashtags_are_normalized_and_bounded():
         "travel",
         "travel_time",
     ]
+
+
+def test_image_filename_produces_topic_hashtags():
+    assert hashtags_for_image("actor1.jpeg") == ["actor"]
+    assert hashtags_for_image("gym7.jpeg") == ["gym", "fitness"]
+    assert hashtags_for_image("fruits4.avif") == ["fruits", "food"]
 
 
 def test_legacy_post_event_without_hashtags_remains_valid():

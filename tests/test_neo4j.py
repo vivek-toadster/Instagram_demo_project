@@ -111,7 +111,8 @@ def test_personalized_candidate_query_returns_interest_signals(monkeypatch):
     assert candidates == [(11, 3, 0.8), (12, 1, 0.0)]
     assert session.parameters == {"user_id": 7, "limit": 25}
     assert "similar_user" in session.statement
-    assert "NOT EXISTS" in session.statement
+    assert "post.user_id <> $user_id" in session.statement
+    assert "NOT EXISTS" not in session.statement
 
 
 class _session_context:

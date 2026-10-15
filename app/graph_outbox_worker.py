@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 
 
 def main() -> None:
+    """Initialize Neo4j and continuously process PostgreSQL outbox batches."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--once", action="store_true", help="process one bounded batch and exit")
     parser.add_argument("--interval", type=float, default=5.0, help="seconds between batches")

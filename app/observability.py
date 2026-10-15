@@ -25,16 +25,19 @@ def increment(name: str, value: int = 1) -> None:
 
 
 def set_gauge(name: str, value: int) -> None:
+    """Set a process-local gauge value used by the metrics endpoint."""
     with _lock:
         _gauges[name] = int(value)
 
 
 def snapshot() -> tuple[dict[str, int], dict[str, int]]:
+    """Return thread-safe copies of current counters and gauges."""
     with _lock:
         return dict(_counters), dict(_gauges)
 
 
 def prometheus_text() -> str:
+    """Render current counters and gauges in simple Prometheus text format."""
     counters, gauges = snapshot()
     lines = []
     for name, value in sorted({**counters, **gauges}.items()):
@@ -48,4 +51,3 @@ def log_event(event: str, **fields: Any) -> None:
     """Emit one JSON event without accepting request bodies or secret values."""
     record: dict[str, Any] = {"event": event, **fields}
     logger.info(json.dumps(record, default=str, sort_keys=True))
-

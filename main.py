@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    """Initialize Neo4j at startup and close it during application shutdown."""
     try:
         initialize_neo4j()
     except Exception:
@@ -34,6 +35,7 @@ app = FastAPI(lifespan=lifespan)
 
 @app.middleware("http")
 async def request_observability(request: Request, call_next):
+    """Record request count, failures, latency, method, path, and status."""
     started = perf_counter()
     status_code = 500
     try:
@@ -72,6 +74,7 @@ app.include_router(router)
 
 @app.get("/health/neo4j")
 def neo4j_health():
+    """Report whether the configured Neo4j driver can reach its database."""
     connected, _error = neo4j_status()
     if connected:
         return {"status": "ok", "service": "neo4j"}
@@ -83,11 +86,13 @@ def neo4j_health():
 
 @app.get("/health/live")
 def liveness_health():
+    """Return a lightweight liveness response for the web process."""
     return {"status": "ok", "service": "instagram_clone"}
 
 
 @app.get("/health/ready")
 def readiness_health():
+    """Report readiness only when PostgreSQL and Neo4j are both available."""
     readiness = check_readiness()
     content = {
         "status": "ok" if readiness.ready else "unavailable",
@@ -102,4 +107,6 @@ def readiness_health():
 
 @app.get("/metrics", response_class=PlainTextResponse)
 def metrics():
+    """Expose process-local operational counters as Prometheus text."""
     return prometheus_text()
+"""FastAPI application entry point, middleware, static files, and health routes."""

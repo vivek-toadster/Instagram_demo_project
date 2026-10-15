@@ -1,5 +1,6 @@
 /* Luma's small interaction layer: actions update in place instead of navigating. */
 document.addEventListener("DOMContentLoaded", () => {
+  // Attach one background-submit handler to every interactive form on the page.
   document.querySelectorAll("form.async-form").forEach((form) => {
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
@@ -72,6 +73,7 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 function showToast(message, isError = false) {
+  // Show a short-lived status message when an AJAX action succeeds or fails.
   const toast = document.createElement("div");
   toast.className = `toast${isError ? " toast-error" : ""}`;
   toast.textContent = message;

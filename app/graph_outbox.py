@@ -41,6 +41,7 @@ def utcnow() -> datetime:
 
 
 def validate_event_payload(event_type: str, payload: object) -> dict:
+    """Validate an event before it can enter or leave the outbox."""
     required = EVENT_PAYLOAD_FIELDS.get(event_type)
     if required is None:
         raise ValueError(f"unsupported graph event type: {event_type}")
@@ -85,6 +86,7 @@ def enqueue_graph_event(
     payload: dict,
     event_id: str | None = None,
 ) -> GraphOutboxEvent:
+    """Add a validated graph event to the caller's current DB transaction."""
     validate_event_payload(event_type, payload)
     timestamp = utcnow()
     event = GraphOutboxEvent(
@@ -102,6 +104,7 @@ def enqueue_graph_event(
 
 
 def _recover_stale_events(db: Session, now: datetime) -> None:
+    """Return events abandoned by a stopped worker to the pending queue."""
     cutoff = now - timedelta(seconds=STALE_PROCESSING_SECONDS)
     db.query(GraphOutboxEvent).filter(
         GraphOutboxEvent.status == PROCESSING,
@@ -117,6 +120,7 @@ def _recover_stale_events(db: Session, now: datetime) -> None:
 
 
 def _backoff_seconds(retry_count: int) -> int:
+    """Calculate capped exponential retry delay for a failed event."""
     return min(300, 2 ** max(retry_count - 1, 0))
 
 

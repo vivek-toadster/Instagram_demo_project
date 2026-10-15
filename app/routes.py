@@ -18,7 +18,7 @@ from app.auth import (
 )
 from app.graph_outbox import enqueue_graph_event
 from app.feed import get_feed_posts
-from app.hashtags import extract_hashtags
+from app.hashtags import extract_hashtags, hashtags_for_image
 
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
@@ -29,6 +29,7 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 # ── Helper ───────────────────────────────────────────────────
 def get_current_user(request: Request, db: Session) -> User | None:
+    """Resolve the signed-in user from the session cookie, if valid."""
     token = request.cookies.get("session_token")
     if not token:
         return None
@@ -39,6 +40,7 @@ def get_current_user(request: Request, db: Session) -> User | None:
 
 
 def get_csrf_token(request: Request) -> str:
+    """Return or create the session's CSRF token for state-changing forms."""
     token = request.session.get("csrf_token")
     if not token:
         token = secrets.token_urlsafe(32)
@@ -47,6 +49,7 @@ def get_csrf_token(request: Request) -> str:
 
 
 def validate_csrf(request: Request, submitted_token: str) -> None:
+    """Reject a request whose submitted CSRF token does not match the session."""
     expected_token = request.session.get("csrf_token")
     if not expected_token or not hmac.compare_digest(expected_token, submitted_token):
         raise HTTPException(status_code=403, detail="Invalid CSRF token")
@@ -58,6 +61,7 @@ def wants_json(request: Request) -> bool:
 
 
 def action_response(request: Request, payload: dict, fallback: str = "/feed"):
+    """Return JSON to AJAX clients and a redirect to traditional form clients."""
     if wants_json(request):
         return JSONResponse(payload)
     return _back(request, fallback)
@@ -76,6 +80,7 @@ def ctx(request, db, **kwargs):
 # ── Home ─────────────────────────────────────────────────────
 @router.get("/", response_class=HTMLResponse)
 def home(request: Request, db: Session = Depends(get_db)):
+    """Redirect authenticated users to the feed and guests to login."""
     user = get_current_user(request, db)
     if user:
         return RedirectResponse(url="/feed", status_code=302)
@@ -85,6 +90,7 @@ def home(request: Request, db: Session = Depends(get_db)):
 # ── Register ─────────────────────────────────────────────────
 @router.get("/register", response_class=HTMLResponse)
 def register_page(request: Request, db: Session = Depends(get_db)):
+    """Render the account registration page for unauthenticated visitors."""
     user = get_current_user(request, db)
     if user:
         return RedirectResponse(url="/feed", status_code=302)
@@ -102,6 +108,7 @@ def register_user(
     csrf_token: str = Form(...),
     db: Session = Depends(get_db),
 ):
+    """Validate registration fields, create the user, and enqueue its graph event."""
     validate_csrf(request, csrf_token)
     errors = []
     if password != confirm_password:
@@ -139,6 +146,7 @@ def register_user(
 
 @router.get("/login", response_class=HTMLResponse)
 def login_page(request: Request, db: Session = Depends(get_db)):
+    """Render the login page and optional post-registration success message."""
     user = get_current_user(request, db)
     if user:
         return RedirectResponse(url="/feed", status_code=302)
@@ -154,6 +162,7 @@ def login_user(
     csrf_token: str = Form(...),
     db: Session = Depends(get_db),
 ):
+    """Authenticate a user and issue a secure session cookie."""
     validate_csrf(request, csrf_token)
     user = db.query(User).filter(
         (User.username == username.lower().strip()) |
@@ -181,6 +190,7 @@ def login_user(
 
 @router.get("/logout")
 def logout():
+    """Clear the session cookie and return the visitor to login."""
     response = RedirectResponse(url="/login", status_code=302)
     response.delete_cookie("session_token")
     return response
@@ -188,6 +198,7 @@ def logout():
 
 @router.get("/profile", response_class=HTMLResponse)
 def my_profile(request: Request, db: Session = Depends(get_db)):
+    """Render the current user's profile, posts, and relationship statistics."""
     user = get_current_user(request, db)
     if not user:
         return RedirectResponse(url="/login", status_code=302)
@@ -199,6 +210,7 @@ def my_profile(request: Request, db: Session = Depends(get_db)):
 
 @router.get("/profile/{username}", response_class=HTMLResponse)
 def user_profile(username: str, request: Request, db: Session = Depends(get_db)):
+    """Render a public profile and determine the viewer's follow state."""
     profile_user = db.query(User).filter(User.username == username.lower()).first()
     if not profile_user:
         return templates.TemplateResponse("error.html", ctx(request, db, detail="User not found!"), status_code=404)
@@ -218,6 +230,7 @@ def toggle_follow(
     csrf_token: str = Form(...),
     db: Session = Depends(get_db),
 ):
+    """Follow or unfollow a profile and return updated relationship counts."""
     validate_csrf(request, csrf_token)
     user = get_current_user(request, db)
     if not user:
@@ -256,6 +269,7 @@ def toggle_follow(
 
 @router.get("/profile-edit", response_class=HTMLResponse)
 def edit_profile_page(request: Request, db: Session = Depends(get_db)):
+    """Render the signed-in user's profile editing form."""
     user = get_current_user(request, db)
     if not user:
         return RedirectResponse(url="/login", status_code=302)
@@ -270,6 +284,7 @@ def edit_profile(
     csrf_token: str = Form(...),
     db: Session = Depends(get_db),
 ):
+    """Validate and persist the signed-in user's editable profile fields."""
     validate_csrf(request, csrf_token)
     user = get_current_user(request, db)
     if not user:
@@ -288,6 +303,7 @@ def feed(
     limit: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
 ):
+    """Render a ranked page of feed posts for the authenticated user."""
     user = get_current_user(request, db)
     if not user:
         return RedirectResponse(url="/login", status_code=302)
@@ -305,6 +321,7 @@ def feed(
 # ── Create Post ──────────────────────────────────────────────
 @router.get("/post/create", response_class=HTMLResponse)
 def create_post_page(request: Request, db: Session = Depends(get_db)):
+    """Render the image upload form for a new post."""
     user = get_current_user(request, db)
     if not user:
         return RedirectResponse(url="/login", status_code=302)
@@ -319,6 +336,7 @@ async def create_post(
     csrf_token: str = Form(...),
     db: Session = Depends(get_db),
 ):
+    """Validate an uploaded image, create its post, and enqueue graph metadata."""
     validate_csrf(request, csrf_token)
     user = get_current_user(request, db)
     if not user:
@@ -340,7 +358,12 @@ async def create_post(
     with open(file_path, "wb") as f:
         shutil.copyfileobj(image.file, f)
 
-    post = Post(caption=caption.strip(), image_path=filename, user_id=user.id)
+    caption_text = caption.strip()
+    existing_tags = set(extract_hashtags(caption_text))
+    image_tags = [tag for tag in hashtags_for_image(image.filename or "photo") if tag not in existing_tags]
+    if image_tags:
+        caption_text = f"{caption_text} {' '.join(f'#{tag}' for tag in image_tags)}".strip()
+    post = Post(caption=caption_text, image_path=filename, user_id=user.id)
     db.add(post)
     db.flush()
     enqueue_graph_event(
@@ -367,6 +390,7 @@ def delete_post(
     csrf_token: str = Form(...),
     db: Session = Depends(get_db),
 ):
+    """Delete an owned post, its image file, and its graph projection event."""
     validate_csrf(request, csrf_token)
     user = get_current_user(request, db)
     if not user:
@@ -399,6 +423,7 @@ def toggle_like(
     csrf_token: str = Form(...),
     db: Session = Depends(get_db),
 ):
+    """Toggle a user's like and return the new count to the browser."""
     validate_csrf(request, csrf_token)
     user = get_current_user(request, db)
     if not user:
@@ -435,6 +460,7 @@ def add_comment(
     csrf_token: str = Form(...),
     db: Session = Depends(get_db),
 ):
+    """Create a comment and return the rendered comment data to the browser."""
     validate_csrf(request, csrf_token)
     user = get_current_user(request, db)
     if not user:
@@ -474,6 +500,7 @@ def delete_comment(
     csrf_token: str = Form(...),
     db: Session = Depends(get_db),
 ):
+    """Delete a comment owned by the user or by the post owner."""
     validate_csrf(request, csrf_token)
     user = get_current_user(request, db)
     if not user:

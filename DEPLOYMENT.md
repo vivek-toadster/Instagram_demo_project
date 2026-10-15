@@ -129,3 +129,16 @@ does not delete existing records or call Neo4j directly. Log in with
 and likes several `#dogs` posts, so unliked dog posts should become candidates
 after the worker processes the outbox. Re-running the command is idempotent
 for the same target range. Use only on a local/test database.
+
+To turn the actual files already present in `uploads/` into posts for the
+existing users, use the separate importer:
+
+```bash
+python scripts/import_uploads_as_posts.py --confirm-local
+python -m app.graph_outbox_worker --interval 1
+```
+
+Each supported image becomes one post and is assigned round-robin across the
+existing users. The importer is idempotent by image path, does not delete or
+copy image files, and supports JPG, JPEG, PNG, GIF, WEBP, AVIF, and JPGE
+extensions.

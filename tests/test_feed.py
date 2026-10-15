@@ -104,7 +104,7 @@ def test_interest_signal_affects_ranking(db, monkeypatch):
     assert [post.id for post in posts] == [11, 12]
 
 
-def test_personalized_feed_excludes_already_liked_posts(db, monkeypatch):
+def test_personalized_feed_keeps_already_liked_posts(db, monkeypatch):
     now = datetime.now(timezone.utc)
     add_user(db, 1, "viewer")
     add_user(db, 2, "author")
@@ -120,7 +120,7 @@ def test_personalized_feed_excludes_already_liked_posts(db, monkeypatch):
 
     posts = feed.get_feed_posts(db, user_id=1, page_size=20)
 
-    assert [post.id for post in posts] == [12]
+    assert [post.id for post in posts] == [11, 12]
 
 
 def test_empty_graph_falls_back_to_postgres(db, monkeypatch):

@@ -5,6 +5,7 @@ from app.database import Base
 
 
 class User(Base):
+    """Application account and profile information."""
     __tablename__ = "users"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -21,10 +22,12 @@ class User(Base):
     comments = relationship("Comment", back_populates="author", cascade="all, delete-orphan")
 
     def __repr__(self):
+        """Return a compact developer-friendly representation of the user."""
         return f"<User(id={self.id}, username='{self.username}')>"
 
 
 class Post(Base):
+    """An uploaded image post and its author/content relationships."""
     __tablename__ = "posts"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -38,10 +41,12 @@ class Post(Base):
     comments = relationship("Comment", back_populates="post", cascade="all, delete-orphan", order_by="Comment.created_at")
 
     def __repr__(self):
+        """Return a compact developer-friendly representation of the post."""
         return f"<Post(id={self.id}, user_id={self.user_id})>"
 
 
 class Like(Base):
+    """Unique user-to-post like relationship."""
     __tablename__ = "likes"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -57,6 +62,7 @@ class Like(Base):
 
 
 class Comment(Base):
+    """Text comment attached to a post and authored by a user."""
     __tablename__ = "comments"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -70,6 +76,7 @@ class Comment(Base):
 
 
 class Follow(Base):
+    """Unique directed relationship from one user to another."""
     __tablename__ = "follows"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -80,6 +87,7 @@ class Follow(Base):
 
 
 class GraphOutboxEvent(Base):
+    """Durable PostgreSQL event waiting to be projected into Neo4j."""
     __tablename__ = "graph_outbox_events"
 
     event_id = Column(String(36), primary_key=True)
@@ -92,3 +100,4 @@ class GraphOutboxEvent(Base):
     next_attempt_at = Column(DateTime, nullable=False, index=True)
     processed_at = Column(DateTime, nullable=True)
     last_error = Column(Text, nullable=True)
+"""Relational models for users, content, relationships, and graph events."""

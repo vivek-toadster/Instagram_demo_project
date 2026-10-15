@@ -15,6 +15,7 @@ class Neo4jClient:
     """Own the process-wide Neo4j driver and its application lifecycle."""
 
     def __init__(self, uri: str | None, username: str | None, password: str | None, database: str | None = None):
+        """Store connection settings without opening a network connection yet."""
         self.uri = uri
         self.username = username
         self.password = password
@@ -23,9 +24,11 @@ class Neo4jClient:
 
     @property
     def configured(self) -> bool:
+        """Return whether all required Neo4j connection values are present."""
         return bool(self.uri and self.username and self.password)
 
     def connect(self) -> None:
+        """Create the driver and fail fast if Neo4j cannot be reached."""
         if not self.configured:
             raise RuntimeError("Neo4j configuration is incomplete; set NEO4J_URI, NEO4J_USERNAME, and NEO4J_PASSWORD")
         self.driver = GraphDatabase.driver(
@@ -40,12 +43,14 @@ class Neo4jClient:
             raise
 
     def close(self) -> None:
+        """Close the active Neo4j driver and release its connections."""
         if self.driver is not None:
             self.driver.close()
             self.driver = None
 
     @contextmanager
     def session(self) -> Iterator:
+        """Yield a database session using the configured Neo4j database."""
         if self.driver is None:
             raise RuntimeError("Neo4j driver is not connected")
         session_kwargs = {"database": self.database} if self.database else {}
@@ -53,6 +58,7 @@ class Neo4jClient:
             yield session
 
     def verify_connectivity(self) -> None:
+        """Raise an error when the current driver cannot reach Neo4j."""
         if self.driver is None:
             raise RuntimeError("Neo4j driver is not connected")
         self.driver.verify_connectivity()
@@ -71,10 +77,12 @@ def initialize_neo4j() -> None:
 
 
 def shutdown_neo4j() -> None:
+    """Close the process-wide Neo4j client during application shutdown."""
     neo4j_client.close()
 
 
 def neo4j_status() -> tuple[bool, str | None]:
+    """Return a boolean connectivity result and an optional diagnostic message."""
     try:
         neo4j_client.verify_connectivity()
     except Exception as exc:
