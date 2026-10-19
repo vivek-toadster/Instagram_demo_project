@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Post by {{ post.author.username }} - Luma{% endblock %}
+
+{% block content %}
+<main class="page-container post-detail-page">
+    <a href="/profile/{{ post.author.username }}" class="back-link">← Back to {{ post.author.username }}</a>
+    <article class="post-card post-detail-card" data-post-id="{{ post.id }}">
+        <div class="post-header">
+            <div class="post-avatar">{{ post.author.username[0].upper() }}</div>
+            <a href="/profile/{{ post.author.username }}" class="post-username">{{ post.author.username }}</a>
+            <span class="post-time">{{ post.created_at.strftime("%d %b %Y") }}</span>
+        </div>
+        <div class="post-img-wrap"><img src="/uploads/{{ post.image_path }}" alt="post" class="post-img"></div>
+        <div class="post-actions">
+            <form method="POST" action="/post/{{ post.id }}/like" class="async-form like-form">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <button type="submit" class="btn-like {% if is_liked %}liked{% endif %}" aria-label="Like post">
+                    <span class="like-icon">{% if is_liked %}♥{% else %}♡{% endif %}</span><span class="like-count">{{ post.likes|length }}</span>
+                </button>
+            </form>
+            <button type="button" class="post-ask-btn" data-ask-post="{{ post.id }}">Ask about this</button>
+        </div>
+        {% if post.caption %}<div class="post-body"><p class="post-caption"><strong>{{ post.author.username }}</strong> {{ post.caption }}</p></div>{% endif %}
+        <div class="comments-section">
+            {% if post.comments %}<div class="comments-list">{% for comment in post.comments %}<div class="comment-item"><a href="/profile/{{ comment.author.username }}" class="comment-username">{{ comment.author.username }}</a><span class="comment-body">{{ comment.body }}</span><span class="comment-time">· {{ comment.created_at.strftime("%d %b") }}</span></div>{% endfor %}</div>{% endif %}
+            <form method="POST" action="/post/{{ post.id }}/comment" class="comment-form async-form">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="text" name="body" placeholder="Add a comment..." maxlength="300" required class="comment-input"><button type="submit" class="comment-submit">Post</button>
+            </form>
+        </div>
+    </article>
+</main>
+{% endblock %}

@@ -12,7 +12,7 @@ from starlette.requests import Request
 from app import routes
 from app.auth import create_session_token, hash_password
 from app.database import Base
-from app.models import Comment, Follow, GraphOutboxEvent, Like, Post, User
+from app.models import Comment, Conversation, Follow, GraphOutboxEvent, Like, Message, Post, User
 
 
 @pytest.fixture
@@ -177,3 +177,39 @@ def test_post_create_and_delete_are_atomic_with_outbox(db, monkeypatch, tmp_path
     )
     assert db.query(Post).count() == 0
     assert db.query(GraphOutboxEvent).filter_by(event_type="post.deleted").count() == 1
+
+
+def test_private_messages_create_a_conversation_and_message(db):
+    add_user(db, 1, "alice")
+    add_user(db, 2, "bob")
+
+    response = routes.send_message(
+        "bob",
+        request_for(1, "token", "/messages/bob"),
+        body="Hey Bob!",
+        csrf_token="token",
+        db=db,
+    )
+
+    assert response.status_code == 303
+    assert db.query(Conversation).count() == 1
+    message = db.query(Message).one()
+    assert message.sender_id == 1
+    assert message.body == "Hey Bob!"
+
+
+def test_chatbot_uses_post_context(db):
+    add_user(db, 1, "alice")
+    post = Post(id=10, user_id=1, caption="A Goa sunset #goa", image_path="goa.jpg")
+    db.add(post)
+    db.commit()
+
+    response = routes.chatbot(
+        request_for(1, "token", "/chatbot"),
+        question="What is this post about?",
+        post_id=10,
+        db=db,
+    )
+
+    assert response["ok"] is True
+    assert "A Goa sunset" in response["answer"]

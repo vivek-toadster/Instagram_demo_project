@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Chat - Luma{% endblock %}
+
+{% block content %}
+<main class="page-container chat-page">
+    <section class="chat-hero">
+        <div>
+            <p class="eyebrow">PRIVATE SPACE</p>
+            <h1>Stay in the loop.</h1>
+            <p class="feed-subtitle">Message people from your Luma community.</p>
+        </div>
+        <span class="chat-hero-icon">✉</span>
+    </section>
+
+    <section class="chat-layout">
+        <div class="chat-panel">
+            <div class="panel-heading"><h2>Recent chats</h2><span>{{ conversations|length }}</span></div>
+            {% if conversations %}
+                <div class="conversation-list">
+                {% for conversation, other, last_message in conversations %}
+                    <a class="conversation-row" href="/messages/{{ other.username }}">
+                        {% if other.profile_pic %}<img class="chat-avatar chat-avatar-image" src="/uploads/{{ other.profile_pic }}" alt="{{ other.username }}">{% else %}<span class="chat-avatar">{{ other.username[0].upper() }}</span>{% endif %}
+                        <span class="conversation-copy">
+                            <strong>{{ other.username }}</strong>
+                            <small>{{ last_message.body[:70] if last_message else "Start a conversation" }}</small>
+                        </span>
+                        <span class="conversation-arrow">›</span>
+                    </a>
+                {% endfor %}
+                </div>
+            {% else %}
+                <div class="empty-chat"><span>💬</span><p>No conversations yet.</p><small>Choose someone below to say hello.</small></div>
+            {% endif %}
+        </div>
+
+        <div class="chat-panel">
+            <div class="panel-heading"><h2>People on Luma</h2><span>{{ contacts|length }}</span></div>
+            <div class="contact-grid">
+            {% for contact in contacts %}
+                <a class="contact-chip" href="/messages/{{ contact.username }}">
+                    {% if contact.profile_pic %}<img class="chat-avatar small chat-avatar-image" src="/uploads/{{ contact.profile_pic }}" alt="{{ contact.username }}">{% else %}<span class="chat-avatar small">{{ contact.username[0].upper() }}</span>{% endif %}
+                    <span><strong>{{ contact.username }}</strong><small>{{ contact.full_name or "Luma member" }}</small></span>
+                </a>
+            {% else %}
+                <p class="muted-copy">No other users yet. Invite someone to join.</p>
+            {% endfor %}
+            </div>
+        </div>
+    </section>
+</main>
+{% endblock %}

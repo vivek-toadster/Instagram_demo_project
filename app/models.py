@@ -86,6 +86,47 @@ class Follow(Base):
     __table_args__ = (UniqueConstraint("follower_id", "followed_id", name="uq_follower_followed"),)
 
 
+class Conversation(Base):
+    """A private one-to-one conversation between two users."""
+    __tablename__ = "conversations"
+
+    id = Column(Integer, primary_key=True, index=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
+
+    participants = relationship("ConversationParticipant", back_populates="conversation", cascade="all, delete-orphan")
+    messages = relationship("Message", back_populates="conversation", cascade="all, delete-orphan", order_by="Message.created_at")
+
+
+class ConversationParticipant(Base):
+    """Membership of a user in a private conversation."""
+    __tablename__ = "conversation_participants"
+
+    id = Column(Integer, primary_key=True, index=True)
+    conversation_id = Column(Integer, ForeignKey("conversations.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+
+    __table_args__ = (UniqueConstraint("conversation_id", "user_id", name="uq_conversation_user"),)
+
+    conversation = relationship("Conversation", back_populates="participants")
+    user = relationship("User")
+
+
+class Message(Base):
+    """Private message sent by one participant to another."""
+    __tablename__ = "messages"
+
+    id = Column(Integer, primary_key=True, index=True)
+    conversation_id = Column(Integer, ForeignKey("conversations.id"), nullable=False, index=True)
+    sender_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    body = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
+    read_at = Column(DateTime, nullable=True)
+
+    conversation = relationship("Conversation", back_populates="messages")
+    sender = relationship("User")
+
+
 class GraphOutboxEvent(Base):
     """Durable PostgreSQL event waiting to be projected into Neo4j."""
     __tablename__ = "graph_outbox_events"

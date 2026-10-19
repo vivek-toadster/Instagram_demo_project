@@ -62,6 +62,10 @@ def test_caption_hashtags_are_normalized_and_bounded():
 
 
 def test_image_filename_produces_topic_hashtags():
+    assert hashtags_for_image("Goa13.jpeg") == ["goa"]
+    assert hashtags_for_image("Bollywood4.jpeg") == ["bollywood"]
+    assert hashtags_for_image("BB10.jpeg") == ["bb"]
+    assert hashtags_for_image("GOT7.jpeg") == ["got"]
     assert hashtags_for_image("actor1.jpeg") == ["actor"]
     assert hashtags_for_image("gym7.jpeg") == ["gym", "fitness"]
     assert hashtags_for_image("fruits4.avif") == ["fruits", "food"]

@@ -64,7 +64,7 @@
     <div class="profile-posts-grid">
         {% for post in posts %}
         <div class="profile-post-thumb">
-            <img src="/uploads/{{ post.image_path }}" alt="post">
+            <a href="/post/{{ post.id }}" aria-label="Open post by {{ post.author.username }}"><img src="/uploads/{{ post.image_path }}" alt="post"></a>
             {% if is_own_profile %}
             <form method="POST" action="/post/{{ post.id }}/delete" class="thumb-delete-form"
                   onsubmit="return confirm('Delete?')">

@@ -6,6 +6,10 @@ from pathlib import Path
 
 _HASHTAG_PATTERN = re.compile(r"(?<![\w])#([A-Za-z0-9_]{1,50})")
 _IMAGE_TOPIC_TAGS = {
+    "goa": ["goa"],
+    "bollywood": ["bollywood"],
+    "bb": ["bb"],
+    "got": ["got"],
     "actor": ["actor"],
     "animal": ["animals"],
     "tiger": ["animals", "nature"],

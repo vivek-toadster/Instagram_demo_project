@@ -1,15 +1,15 @@
 {% extends "base.html" %}
-<!-- Feed page: renders ranked post cards and AJAX forms for likes, comments, and deletes. -->
-{% block title %}Home - Luma{% endblock %}
+<!-- Feed and Explore pages share post cards but use different post sources. -->
+{% block title %}{{ "Explore" if explore else "Home" }} - Luma{% endblock %}
 
 {% block content %}
 <div class="page-container">
 
     <div class="feed-intro">
         <div>
-            <p class="eyebrow">YOUR DAILY EDIT</p>
-            <h1>Moments worth keeping.</h1>
-            <p class="feed-subtitle">A calmer place for the people and stories you care about.</p>
+            <p class="eyebrow">{{ "DISCOVER EVERYTHING" if explore else "YOUR DAILY EDIT" }}</p>
+            <h1>{{ "Explore all moments." if explore else "Moments worth keeping." }}</h1>
+            <p class="feed-subtitle">{{ "See every post and shape your feed with likes and follows." if explore else "A calmer place for the people and stories you care about." }}</p>
         </div>
         <a href="/post/create" class="btn-new-post">+ New Post</a>
     </div>
@@ -50,6 +50,7 @@
                     <button type="submit" class="btn-delete">🗑 Delete</button>
                 </form>
                 {% endif %}
+                <button type="button" class="post-ask-btn" data-ask-post="{{ post.id }}">Ask about this</button>
             </div>
 
             <!-- Caption -->

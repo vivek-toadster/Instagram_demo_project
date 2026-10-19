@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Chat with {{ other_user.username }} - Luma{% endblock %}
+
+{% block content %}
+<main class="page-container thread-page">
+    <a class="back-link" href="/messages">← All chats</a>
+    <section class="thread-card" data-thread data-current-username="{{ current_user.username }}">
+        <header class="thread-header">
+            {% if other_user.profile_pic %}<img class="chat-avatar chat-avatar-image" src="/uploads/{{ other_user.profile_pic }}" alt="{{ other_user.username }}">{% else %}<span class="chat-avatar">{{ other_user.username[0].upper() }}</span>{% endif %}
+            <div><p class="eyebrow">PRIVATE CHAT</p><h1>{{ other_user.username }}</h1><small>{{ other_user.full_name or "Luma member" }}</small></div>
+        </header>
+        <div class="message-list">
+            {% for message in messages %}
+                <div class="message-bubble-wrap {% if message.sender_id == current_user.id %}mine{% endif %}" data-message-row>
+                    <strong class="message-author">{{ message.sender.username }}</strong>
+                    <div class="message-bubble">{{ message.body }}</div>
+                    <small>{{ message.created_at.strftime("%d %b, %H:%M") }}</small>
+                </div>
+            {% else %}
+                <div class="thread-empty"><span>✨</span><p>Start the conversation.</p><small>Say hello to {{ other_user.username }}.</small></div>
+            {% endfor %}
+        </div>
+        <form class="message-compose async-form" method="POST" action="/messages/{{ other_user.username }}" data-other-username="{{ other_user.username }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="text" name="body" maxlength="2000" placeholder="Write a message…" required>
+            <button type="submit" class="btn-primary">Send</button>
+        </form>
+    </section>
+</main>
+{% endblock %}

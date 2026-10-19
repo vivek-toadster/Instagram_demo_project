@@ -2,14 +2,24 @@ import os
 import hmac
 import secrets
 import shutil
+from datetime import datetime, timezone
 from fastapi import APIRouter, Request, Depends, Form, UploadFile, File, Query, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.database import get_db
 from app.config import COOKIE_SECURE, SESSION_MAX_AGE_SECONDS
-from app.models import User, Post, Like, Comment, Follow
+from app.models import (
+    User,
+    Post,
+    Like,
+    Comment,
+    Follow,
+    Conversation,
+    ConversationParticipant,
+    Message,
+)
 from app.auth import (
     hash_password,
     verify_password,
@@ -19,6 +29,7 @@ from app.auth import (
 from app.graph_outbox import enqueue_graph_event
 from app.feed import get_feed_posts
 from app.hashtags import extract_hashtags, hashtags_for_image
+from app.chatbot import answer_question
 
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
@@ -75,6 +86,22 @@ def ctx(request, db, **kwargs):
         "csrf_token": get_csrf_token(request),
         **kwargs,
     }
+
+
+def _sidebar_users(db: Session, user: User, limit: int = 5) -> list[tuple[User, bool]]:
+    """Build right-rail suggestions with the current follow state."""
+    following_ids = {
+        row.followed_id
+        for row in db.query(Follow).filter(Follow.follower_id == user.id).all()
+    }
+    candidates = (
+        db.query(User)
+        .filter(User.id != user.id)
+        .order_by(User.created_at.desc(), User.username.asc())
+        .limit(limit)
+        .all()
+    )
+    return [(candidate, candidate.id in following_ids) for candidate in candidates]
 
 
 # ── Home ─────────────────────────────────────────────────────
@@ -254,14 +281,16 @@ def toggle_follow(
     )
     db.commit()
     followers_count = db.query(Follow).filter(Follow.followed_id == profile_user.id).count()
-    following_count = db.query(Follow).filter(Follow.follower_id == user.id).count()
+    profile_following_count = db.query(Follow).filter(Follow.follower_id == profile_user.id).count()
+    viewer_following_count = db.query(Follow).filter(Follow.follower_id == user.id).count()
     return action_response(
         request,
         {
             "ok": True,
             "is_following": is_following,
             "followers_count": followers_count,
-            "following_count": following_count,
+            "following_count": profile_following_count,
+            "viewer_following_count": viewer_following_count,
         },
         f"/profile/{profile_user.username}",
     )
@@ -295,6 +324,129 @@ def edit_profile(
     return RedirectResponse(url="/profile", status_code=302)
 
 
+# ── Private chat ────────────────────────────────────────────
+def _find_conversation(db: Session, first_user_id: int, second_user_id: int) -> Conversation | None:
+    """Find a one-to-one conversation shared by two users."""
+    conversations = (
+        db.query(Conversation)
+        .join(ConversationParticipant)
+        .filter(ConversationParticipant.user_id == first_user_id)
+        .all()
+    )
+    for conversation in conversations:
+        if any(participant.user_id == second_user_id for participant in conversation.participants):
+            return conversation
+    return None
+
+
+@router.get("/messages", response_class=HTMLResponse)
+def messages_inbox(request: Request, db: Session = Depends(get_db)):
+    """Show recent private conversations and available users to message."""
+    user = get_current_user(request, db)
+    if not user:
+        return RedirectResponse(url="/login", status_code=302)
+    conversations = (
+        db.query(Conversation)
+        .join(ConversationParticipant)
+        .filter(ConversationParticipant.user_id == user.id)
+        .order_by(Conversation.updated_at.desc())
+        .all()
+    )
+    conversation_rows = []
+    for conversation in conversations:
+        other = next((p.user for p in conversation.participants if p.user_id != user.id), None)
+        if other:
+            conversation_rows.append((conversation, other, conversation.messages[-1] if conversation.messages else None))
+    contacts = db.query(User).filter(User.id != user.id).order_by(User.username.asc()).all()
+    return templates.TemplateResponse(
+        "messages.html",
+        ctx(request, db, conversations=conversation_rows, contacts=contacts),
+    )
+
+
+@router.get("/messages/{username}", response_class=HTMLResponse)
+def message_thread(username: str, request: Request, db: Session = Depends(get_db)):
+    """Render a private thread with another user."""
+    user = get_current_user(request, db)
+    if not user:
+        return RedirectResponse(url="/login", status_code=302)
+    other = db.query(User).filter(User.username == username.lower()).first()
+    if not other or other.id == user.id:
+        return templates.TemplateResponse("error.html", ctx(request, db, detail="User not found."), status_code=404)
+    conversation = _find_conversation(db, user.id, other.id)
+    messages = conversation.messages if conversation else []
+    if conversation:
+        changed = False
+        for message in messages:
+            if message.sender_id != user.id and message.read_at is None:
+                message.read_at = datetime.now(timezone.utc)
+                changed = True
+        if changed:
+            db.commit()
+    return templates.TemplateResponse(
+        "chat_thread.html",
+        ctx(request, db, other_user=other, messages=messages),
+    )
+
+
+@router.post("/messages/{username}")
+def send_message(
+    username: str,
+    request: Request,
+    body: str = Form(...),
+    csrf_token: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    """Send a private message and create the conversation on first contact."""
+    validate_csrf(request, csrf_token)
+    user = get_current_user(request, db)
+    if not user:
+        return RedirectResponse(url="/login", status_code=302)
+    other = db.query(User).filter(User.username == username.lower()).first()
+    body = body.strip()
+    if not other or other.id == user.id:
+        raise HTTPException(status_code=404, detail="User not found.")
+    if not body or len(body) > 2000:
+        raise HTTPException(status_code=400, detail="Message must contain 1 to 2000 characters.")
+
+    conversation = _find_conversation(db, user.id, other.id)
+    if conversation is None:
+        conversation = Conversation()
+        db.add(conversation)
+        db.flush()
+        db.add_all([
+            ConversationParticipant(conversation_id=conversation.id, user_id=user.id),
+            ConversationParticipant(conversation_id=conversation.id, user_id=other.id),
+        ])
+    message = Message(conversation_id=conversation.id, sender_id=user.id, body=body)
+    conversation.updated_at = datetime.now(timezone.utc)
+    db.add(message)
+    db.commit()
+    return action_response(request, {"ok": True, "message": body}, f"/messages/{other.username}")
+
+
+# ── Luma Assistant ──────────────────────────────────────────
+@router.post("/chatbot")
+def chatbot(
+    request: Request,
+    question: str = Form(...),
+    post_id: str | None = Form(None),
+    db: Session = Depends(get_db),
+):
+    """Answer an app or post question with the local Luma Assistant."""
+    user = get_current_user(request, db)
+    if not user:
+        return JSONResponse({"ok": False, "error": "Please log in first."}, status_code=401)
+    selected_post_id = None
+    if post_id:
+        try:
+            selected_post_id = int(post_id)
+        except ValueError:
+            selected_post_id = None
+    post = db.query(Post).filter(Post.id == selected_post_id).first() if selected_post_id else None
+    return {"ok": True, "answer": answer_question(question, post)}
+
+
 # ── Feed ─────────────────────────────────────────────────────
 @router.get("/feed", response_class=HTMLResponse)
 def feed(
@@ -314,8 +466,57 @@ def feed(
     }
     return templates.TemplateResponse(
         "feed.html",
-        ctx(request, db, posts=posts, liked_post_ids=liked_post_ids),
+        ctx(
+            request,
+            db,
+            posts=posts,
+            liked_post_ids=liked_post_ids,
+            sidebar_users=_sidebar_users(db, user),
+            explore=False,
+        ),
     )
+
+
+@router.get("/explore", response_class=HTMLResponse)
+def explore(request: Request, db: Session = Depends(get_db)):
+    """Show the complete public post collection, independent of personalization."""
+    user = get_current_user(request, db)
+    if not user:
+        return RedirectResponse(url="/login", status_code=302)
+    posts = (
+        db.query(Post)
+        .options(
+            joinedload(Post.author),
+            selectinload(Post.likes),
+            selectinload(Post.comments).selectinload(Comment.author),
+        )
+        .order_by(Post.created_at.desc(), Post.id.desc())
+        .all()
+    )
+    liked_post_ids = {
+        like.post_id
+        for like in db.query(Like).filter(Like.user_id == user.id).all()
+    }
+    return templates.TemplateResponse(
+        "feed.html",
+        ctx(
+            request,
+            db,
+            posts=posts,
+            liked_post_ids=liked_post_ids,
+            sidebar_users=_sidebar_users(db, user),
+            explore=True,
+        ),
+    )
+
+
+@router.get("/notifications", response_class=HTMLResponse)
+def notifications(request: Request, db: Session = Depends(get_db)):
+    """Show the intentionally empty notifications state until notifications are implemented."""
+    user = get_current_user(request, db)
+    if not user:
+        return RedirectResponse(url="/login", status_code=302)
+    return templates.TemplateResponse("notifications.html", ctx(request, db))
 
 
 # ── Create Post ──────────────────────────────────────────────
@@ -380,6 +581,30 @@ async def create_post(
     )
     db.commit()
     return RedirectResponse(url="/feed", status_code=302)
+
+
+@router.get("/post/{post_id}", response_class=HTMLResponse)
+def post_detail(post_id: int, request: Request, db: Session = Depends(get_db)):
+    """Show one profile post with the same like and comment controls as the feed."""
+    user = get_current_user(request, db)
+    if not user:
+        return RedirectResponse(url="/login", status_code=302)
+    post = (
+        db.query(Post)
+        .options(
+            joinedload(Post.author),
+            selectinload(Post.likes),
+            selectinload(Post.comments).selectinload(Comment.author),
+        )
+        .filter(Post.id == post_id)
+        .first()
+    )
+    if not post:
+        return templates.TemplateResponse("error.html", ctx(request, db, detail="Post not found."), status_code=404)
+    return templates.TemplateResponse(
+        "post_detail.html",
+        ctx(request, db, post=post, is_liked=any(like.user_id == user.id for like in post.likes)),
+    )
 
 
 # ── Delete Post ──────────────────────────────────────────────

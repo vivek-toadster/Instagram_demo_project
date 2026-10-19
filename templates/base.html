@@ -1,32 +1,80 @@
 <!DOCTYPE html>
-<!-- Shared Luma layout: loads global styling/scripts and renders the authenticated navigation. -->
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="description" content="Luma - share the moments that stay with you">
     <title>{% block title %}Luma{% endblock %}</title>
-    <link rel="stylesheet" href="/static/style.css">
-    <script src="/static/app.js" defer></script>
+    <link rel="stylesheet" href="/static/style.css?v=6">
+    <script src="/static/app.js?v=6" defer></script>
 </head>
 <body>
-
-<!-- NAVBAR: current_user context variable se control hoga -->
 {% if current_user %}
-<nav class="navbar">
-    <div class="nav-inner">
+<div class="app-shell">
+    <aside class="left-sidebar">
         <a href="/feed" class="nav-logo"><span class="brand-mark">✦</span> Luma</a>
-        <div class="nav-links">
-            <a href="/feed"><span>⌂</span> Feed</a>
-            <a href="/profile" class="nav-username"><span class="nav-avatar">{{ current_user.username[0].upper() }}</span>{{ current_user.username }}</a>
-            <a href="/profile-edit">Edit profile</a>
-            <a href="/logout" class="logout-btn">Log out</a>
+        <nav class="side-nav" aria-label="Primary navigation">
+            <a href="/feed" class="side-nav-link {% if request.url.path == '/feed' %}active{% endif %}"><span>⌂</span><b>Home</b></a>
+            <a href="/explore" class="side-nav-link {% if request.url.path == '/explore' %}active{% endif %}"><span>⌕</span><b>Explore</b></a>
+            <a href="/messages" class="side-nav-link {% if request.url.path.startswith('/messages') %}active{% endif %}"><span>✉</span><b>Messages</b></a>
+            <a href="/notifications" class="side-nav-link {% if request.url.path == '/notifications' %}active{% endif %}"><span>♡</span><b>Notifications</b></a>
+            <a href="/post/create" class="side-nav-link"><span>⊞</span><b>Create</b></a>
+        </nav>
+        <div class="side-bottom">
+            <a href="/profile" class="side-profile-link">
+                {% if current_user.profile_pic %}<img class="nav-avatar nav-avatar-image" src="/uploads/{{ current_user.profile_pic }}" alt="{{ current_user.username }}">{% else %}<span class="nav-avatar">{{ current_user.username[0].upper() }}</span>{% endif %}
+                <span><b>{{ current_user.username }}</b><small>View profile</small></span>
+            </a>
+            <a href="/profile-edit" class="side-small-link">Edit profile</a>
+            <a href="/logout" class="side-small-link logout-btn">Log out</a>
         </div>
-    </div>
-</nav>
+    </aside>
+    <div class="main-column">
 {% endif %}
 
 {% block content %}{% endblock %}
+
+{% if current_user %}
+    </div>
+    <aside class="right-rail">
+        <a href="/profile" class="rail-profile">
+            {% if current_user.profile_pic %}<img class="rail-avatar" src="/uploads/{{ current_user.profile_pic }}" alt="{{ current_user.username }}">{% else %}<span class="rail-avatar">{{ current_user.username[0].upper() }}</span>{% endif %}
+            <span><b>{{ current_user.username }}</b><small>{{ current_user.full_name or "Your profile" }}</small></span>
+            <strong>Profile</strong>
+        </a>
+
+        {% if sidebar_users is defined %}
+        <section class="suggestions-card">
+            <div class="suggestions-heading"><b>Suggestions for you</b><a href="/explore">See all</a></div>
+            {% for suggestion, is_following in sidebar_users %}
+            <div class="suggestion-row">
+                {% if suggestion.profile_pic %}<img class="suggestion-avatar" src="/uploads/{{ suggestion.profile_pic }}" alt="{{ suggestion.username }}">{% else %}<span class="suggestion-avatar">{{ suggestion.username[0].upper() }}</span>{% endif %}
+                <a href="/profile/{{ suggestion.username }}" class="suggestion-copy"><b>{{ suggestion.username }}</b><small>{{ suggestion.full_name or "Suggested for you" }}</small></a>
+                <form method="POST" action="/profile/{{ suggestion.username }}/follow" class="async-form follow-form">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <button type="submit" class="suggestion-follow">{{ "Following" if is_following else "Follow" }}</button>
+                </form>
+            </div>
+            {% else %}<p class="rail-muted">Create another account to see suggestions.</p>{% endfor %}
+        </section>
+        {% endif %}
+
+        <aside class="assistant-widget" aria-label="Luma Assistant">
+            <div class="assistant-heading">
+                <div><span class="assistant-kicker">LUMA AI</span><strong>Ask the assistant</strong></div>
+                <span class="assistant-spark">✦</span>
+            </div>
+            <div class="assistant-history" data-assistant-history aria-live="polite"></div>
+            <p class="assistant-answer" data-assistant-answer>Ask me about a post or any topic.</p>
+            <form class="assistant-form" data-assistant-form>
+                <input type="hidden" name="post_id" data-assistant-post-id>
+                <input type="text" name="question" placeholder="Ask anything…" maxlength="500" required>
+                <button type="submit" aria-label="Ask assistant">➜</button>
+            </form>
+        </aside>
+    </aside>
+</div>
+{% endif %}
 
 </body>
 </html>
