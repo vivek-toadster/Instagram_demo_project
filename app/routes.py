@@ -3,7 +3,7 @@ import hmac
 import secrets
 import shutil
 from datetime import datetime, timezone
-from fastapi import APIRouter, Request, Depends, Form, UploadFile, File, Query, HTTPException
+from fastapi import APIRouter, Request, Depends, Form, UploadFile, File, Query, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session, joinedload, selectinload
@@ -30,6 +30,8 @@ from app.graph_outbox import enqueue_graph_event
 from app.feed import get_feed_posts
 from app.hashtags import extract_hashtags, hashtags_for_image
 from app.chatbot import answer_question
+from app.database import SessionLocal
+from app.realtime import chat_manager
 
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
@@ -422,7 +424,83 @@ def send_message(
     conversation.updated_at = datetime.now(timezone.utc)
     db.add(message)
     db.commit()
+    room = tuple(sorted((user.id, other.id)))
+    chat_manager.publish_from_sync(
+        room,
+        {"type": "message", "message": _message_payload(message)},
+    )
     return action_response(request, {"ok": True, "message": body}, f"/messages/{other.username}")
+
+
+def _message_payload(message: Message) -> dict:
+    """Return the JSON representation shared with connected chat clients."""
+    created_at = message.created_at
+    if created_at.tzinfo is None:
+        created_at = created_at.replace(tzinfo=timezone.utc)
+    return {
+        "id": message.id,
+        "sender_id": message.sender_id,
+        "sender_username": message.sender.username,
+        "body": message.body,
+        "created_at": created_at.isoformat(),
+    }
+
+
+@router.websocket("/ws/messages/{username}")
+async def message_socket(websocket: WebSocket, username: str):
+    """Authenticate a private-chat socket and relay persisted messages live."""
+    token = websocket.cookies.get("session_token")
+    user_id = get_user_id_from_token(token) if token else None
+    db = SessionLocal()
+    user = db.query(User).filter(User.id == user_id).first() if user_id else None
+    other = db.query(User).filter(User.username == username.lower()).first()
+
+    if not user or not other or other.id == user.id:
+        await websocket.close(code=1008)
+        db.close()
+        return
+
+    room = tuple(sorted((user.id, other.id)))
+    await chat_manager.connect(room, websocket)
+    try:
+        while True:
+            try:
+                data = await websocket.receive_json()
+            except ValueError:
+                await websocket.send_json({"type": "error", "error": "Send a valid JSON message."})
+                continue
+
+            if data.get("type") != "message":
+                await websocket.send_json({"type": "error", "error": "Unsupported message type."})
+                continue
+
+            body = str(data.get("body", "")).strip()
+            if not body or len(body) > 2000:
+                await websocket.send_json({"type": "error", "error": "Message must contain 1 to 2000 characters."})
+                continue
+
+            conversation = _find_conversation(db, user.id, other.id)
+            if conversation is None:
+                conversation = Conversation()
+                db.add(conversation)
+                db.flush()
+                db.add_all([
+                    ConversationParticipant(conversation_id=conversation.id, user_id=user.id),
+                    ConversationParticipant(conversation_id=conversation.id, user_id=other.id),
+                ])
+            message = Message(conversation_id=conversation.id, sender_id=user.id, body=body)
+            conversation.updated_at = datetime.now(timezone.utc)
+            db.add(message)
+            db.flush()
+            payload = {"type": "message", "message": _message_payload(message)}
+            db.commit()
+
+            await chat_manager.send_to_room(room, payload)
+    except WebSocketDisconnect:
+        pass
+    finally:
+        chat_manager.disconnect(room, websocket)
+        db.close()
 
 
 # ── Luma Assistant ──────────────────────────────────────────

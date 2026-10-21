@@ -13,6 +13,7 @@ PostgreSQL is the source of truth. Neo4j is a rebuildable read-side graph used f
 - Personalized feed with ranking and PostgreSQL fallback
 - Likes, comments, follows, and post/comment deletion
 - AJAX actions that update the UI without a full-page refresh
+- Real-time private messaging over authenticated WebSockets with HTTP fallback
 - Transactional PostgreSQL outbox and Neo4j graph projection
 - Health endpoints, metrics, retries, idempotency, and dead-letter handling
 
@@ -87,3 +88,11 @@ For a user action, the route commits the business record and an outbox event to 
 ## Project Goal
 
 The goal of this project is to build a basic Instagram-style application while learning user authentication, database integration, profile management, and backend development with FastAPI.
+
+
+
+To Start a vectorgraph : ./neo4j-desktop-2.2.1-x86_64.AppImage
+
+
+To restart db : python -m app.graph_outbox_worker --once
+

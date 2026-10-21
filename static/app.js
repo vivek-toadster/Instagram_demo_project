@@ -9,6 +9,45 @@ document.addEventListener("DOMContentLoaded", () => {
   };
 
   // Attach one background-submit handler to every interactive form on the page.
+  const thread = document.querySelector("[data-thread]");
+  const messageForm = thread?.querySelector(".message-compose");
+  let chatSocket = null;
+
+  const appendMessage = (message) => {
+    const list = thread?.querySelector(".message-list");
+    if (!list || list.querySelector(`[data-message-id="${message.id}"]`)) return;
+    list.querySelector(".thread-empty")?.remove();
+    const row = document.createElement("div");
+    row.className = `message-bubble-wrap${message.sender_id === Number(thread.dataset.currentUserId) ? " mine" : ""}`;
+    row.dataset.messageRow = "";
+    row.dataset.messageId = message.id;
+    const author = document.createElement("strong");
+    author.className = "message-author";
+    author.textContent = message.sender_username;
+    const bubble = document.createElement("div");
+    bubble.className = "message-bubble";
+    bubble.textContent = message.body;
+    const timestamp = document.createElement("small");
+    timestamp.textContent = new Date(message.created_at).toLocaleString([], { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
+    row.append(author, bubble, timestamp);
+    list.append(row);
+    list.scrollTop = list.scrollHeight;
+  };
+
+  if (thread && messageForm) {
+    const status = thread.querySelector("[data-chat-status]");
+    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    chatSocket = new WebSocket(`${protocol}//${window.location.host}${thread.dataset.websocketUrl}`);
+    chatSocket.addEventListener("open", () => { if (status) status.textContent = "Live"; });
+    chatSocket.addEventListener("close", () => { if (status) status.textContent = "Offline · retry to reconnect"; });
+    chatSocket.addEventListener("error", () => { if (status) status.textContent = "Offline"; });
+    chatSocket.addEventListener("message", (event) => {
+      const data = JSON.parse(event.data);
+      if (data.type === "message") appendMessage(data.message);
+      if (data.type === "error") showToast(data.error, true);
+    });
+  }
+
   document.querySelectorAll("form.async-form").forEach((form) => {
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
@@ -16,6 +55,13 @@ document.addEventListener("DOMContentLoaded", () => {
       if (submit) submit.disabled = true;
 
       try {
+        if (form.classList.contains("message-compose") && chatSocket?.readyState === WebSocket.OPEN) {
+          const body = form.querySelector("input[name=body]").value.trim();
+          if (!body) return;
+          chatSocket.send(JSON.stringify({ type: "message", body }));
+          form.reset();
+          return;
+        }
         const response = await fetch(form.action, {
           method: "POST",
           body: new FormData(form),
@@ -72,25 +118,11 @@ document.addEventListener("DOMContentLoaded", () => {
           setTimeout(() => card?.remove(), 220);
         }
         if (form.classList.contains("message-compose")) {
-          const thread = document.querySelector("[data-thread]");
           const list = thread?.querySelector(".message-list");
           const empty = list?.querySelector(".thread-empty");
           if (empty) empty.remove();
           if (list) {
-            const row = document.createElement("div");
-            row.className = "message-bubble-wrap mine";
-            row.setAttribute("data-message-row", "");
-            const author = document.createElement("strong");
-            author.className = "message-author";
-            author.textContent = thread.dataset.currentUsername;
-            const bubble = document.createElement("div");
-            bubble.className = "message-bubble";
-            bubble.textContent = data.message;
-            const timestamp = document.createElement("small");
-            timestamp.textContent = "now";
-            row.append(author, bubble, timestamp);
-            list.append(row);
-            list.scrollTop = list.scrollHeight;
+            appendMessage({ id: `fallback-${Date.now()}`, sender_id: Number(thread.dataset.currentUserId), sender_username: thread.dataset.currentUsername, body: data.message, created_at: new Date().toISOString() });
           }
           form.reset();
         }
