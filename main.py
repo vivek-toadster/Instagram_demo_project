@@ -12,6 +12,7 @@ from app.routes import router
 from app.neo4j_client import initialize_neo4j, neo4j_status, shutdown_neo4j
 from app.health import check_readiness
 from app.observability import increment, log_event, prometheus_text
+from app.realtime import chat_manager
 
 logger = logging.getLogger(__name__)
 
@@ -25,9 +26,11 @@ async def lifespan(app: FastAPI):
         # PostgreSQL remains the primary store; a graph outage must not prevent
         # the existing application from starting.
         logger.exception("Neo4j initialization failed; graph features are unavailable")
+    await chat_manager.start()
     try:
         yield
     finally:
+        await chat_manager.stop()
         shutdown_neo4j()
 
 app = FastAPI(lifespan=lifespan)

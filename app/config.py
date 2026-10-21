@@ -27,6 +27,7 @@ if APP_ENV in {"production", "prod"} and (
     raise RuntimeError("SECRET_KEY must be a strong value in production")
 SESSION_MAX_AGE_SECONDS = int(os.getenv("SESSION_MAX_AGE_SECONDS", "604800"))
 COOKIE_SECURE = os.getenv("COOKIE_SECURE", "false").lower() == "true"
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
 # Neo4j is an optional graph store at this stage.  When NEO4J_DATABASE is not
 # set, the driver uses the server's configured default database.

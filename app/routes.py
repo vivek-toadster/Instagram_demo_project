@@ -495,7 +495,7 @@ async def message_socket(websocket: WebSocket, username: str):
             payload = {"type": "message", "message": _message_payload(message)}
             db.commit()
 
-            await chat_manager.send_to_room(room, payload)
+            await chat_manager.publish(room, payload)
     except WebSocketDisconnect:
         pass
     finally:
