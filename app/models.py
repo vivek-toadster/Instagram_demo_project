@@ -33,16 +33,45 @@ class Post(Base):
     id = Column(Integer, primary_key=True, index=True)
     caption = Column(Text, nullable=True)
     image_path = Column(String(500), nullable=False)
+    # The first image remains in image_path for backwards compatibility. Extra
+    # carousel images are stored in PostMedia in display order.
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
 
     author = relationship("User", back_populates="posts")
     likes = relationship("Like", back_populates="post", cascade="all, delete-orphan")
     comments = relationship("Comment", back_populates="post", cascade="all, delete-orphan", order_by="Comment.created_at")
+    media = relationship("PostMedia", back_populates="post", cascade="all, delete-orphan", order_by="PostMedia.position")
 
     def __repr__(self):
         """Return a compact developer-friendly representation of the post."""
         return f"<Post(id={self.id}, user_id={self.user_id})>"
+
+
+class PostMedia(Base):
+    """Additional images belonging to a post carousel."""
+    __tablename__ = "post_media"
+
+    id = Column(Integer, primary_key=True, index=True)
+    post_id = Column(Integer, ForeignKey("posts.id"), nullable=False, index=True)
+    image_path = Column(String(500), nullable=False)
+    position = Column(Integer, nullable=False, default=0)
+
+    post = relationship("Post", back_populates="media")
+
+
+class DraftPost(Base):
+    """Private, editable post draft owned by one user."""
+    __tablename__ = "draft_posts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    caption = Column(Text, nullable=True)
+    image_paths = Column(JSON, nullable=False, default=list)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), index=True)
+
+    user = relationship("User")
 
 
 class Like(Base):

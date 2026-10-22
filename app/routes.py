@@ -19,6 +19,8 @@ from app.models import (
     Conversation,
     ConversationParticipant,
     Message,
+    PostMedia,
+    DraftPost,
 )
 from app.auth import (
     hash_password,
@@ -522,7 +524,7 @@ def chatbot(
         except ValueError:
             selected_post_id = None
     post = db.query(Post).filter(Post.id == selected_post_id).first() if selected_post_id else None
-    return {"ok": True, "answer": answer_question(question, post)}
+    return {"ok": True, "answer": answer_question(question, post, db=db, user=user)}
 
 
 # ── Feed ─────────────────────────────────────────────────────
@@ -604,14 +606,35 @@ def create_post_page(request: Request, db: Session = Depends(get_db)):
     user = get_current_user(request, db)
     if not user:
         return RedirectResponse(url="/login", status_code=302)
-    return templates.TemplateResponse("create_post.html", ctx(request, db))
+    drafts = [
+        draft for draft in db.query(DraftPost).filter(DraftPost.user_id == user.id).order_by(DraftPost.updated_at.desc()).all()
+        if (draft.caption or "").strip() or draft.image_paths
+    ]
+    active_draft = None
+    draft_query = request.query_params.get("draft_id")
+    if draft_query:
+        try:
+            active_draft = db.query(DraftPost).filter(
+                DraftPost.id == int(draft_query), DraftPost.user_id == user.id
+            ).first()
+        except ValueError:
+            active_draft = None
+    return templates.TemplateResponse(
+        "create_post.html",
+        ctx(request, db, drafts=drafts, active_draft=active_draft, saved=request.query_params.get("saved")),
+    )
 
 
 @router.post("/post/create", response_class=HTMLResponse)
 async def create_post(
     request: Request,
     caption: str = Form(""),
-    image: UploadFile = File(...),
+    image: UploadFile | None = File(None),
+    images: list[UploadFile] = File(default=[]),
+    publish: str = Form("1"),
+    # Browsers submit an empty string for the hidden field when creating a new
+    # draft. Keep this as text at the request boundary, then parse it safely.
+    draft_id: str | None = Form(None),
     csrf_token: str = Form(...),
     db: Session = Depends(get_db),
 ):
@@ -621,30 +644,66 @@ async def create_post(
     if not user:
         return RedirectResponse(url="/login", status_code=302)
 
-    # Validate image
+    # Multiple files become a carousel; the original single-file parameter is
+    # retained so existing clients and tests continue to work.
+    image_list = images if isinstance(images, list) else []
+    publish_value = publish if isinstance(publish, str) else "1"
+    try:
+        draft_value = int(draft_id) if draft_id and str(draft_id).strip() else None
+    except (TypeError, ValueError):
+        draft_value = None
+    uploads = ([image] if image and image.filename else []) + [item for item in image_list if item and item.filename]
     allowed = {"image/jpeg", "image/png", "image/gif", "image/webp"}
-    if image.content_type not in allowed:
+    if any(item.content_type not in allowed for item in uploads):
         return templates.TemplateResponse(
             "create_post.html",
             ctx(request, db, error="Only JPG, PNG, GIF, WEBP allowed!"),
         )
 
-    # Save file with unique name
-    ext = image.filename.rsplit(".", 1)[-1]
     import time
-    filename = f"{user.id}_{int(time.time())}.{ext}"
-    file_path = os.path.join(UPLOAD_DIR, filename)
-    with open(file_path, "wb") as f:
-        shutil.copyfileobj(image.file, f)
+    saved_paths = []
+    for index, upload in enumerate(uploads):
+        ext = upload.filename.rsplit(".", 1)[-1]
+        filename = f"{user.id}_{int(time.time() * 1000)}_{index}.{ext}"
+        with open(os.path.join(UPLOAD_DIR, filename), "wb") as f:
+            shutil.copyfileobj(upload.file, f)
+        saved_paths.append(filename)
 
     caption_text = caption.strip()
+    existing_draft = db.query(DraftPost).filter(DraftPost.id == draft_value, DraftPost.user_id == user.id).first() if draft_value else None
+    if publish_value != "1":
+        if not existing_draft and not caption_text and not saved_paths:
+            return templates.TemplateResponse(
+                "create_post.html",
+                ctx(request, db, drafts=[
+                    draft for draft in db.query(DraftPost).filter(DraftPost.user_id == user.id).order_by(DraftPost.updated_at.desc()).all()
+                    if (draft.caption or "").strip() or draft.image_paths
+                ], error="Add a caption or choose at least one image before saving a draft."),
+            )
+        draft = existing_draft
+        if draft is None:
+            draft = DraftPost(user_id=user.id)
+            db.add(draft)
+        draft.caption = caption_text
+        draft.image_paths = list(draft.image_paths or []) + saved_paths
+        db.commit()
+        return RedirectResponse(url="/post/create?saved=1", status_code=303)
+    if existing_draft:
+        saved_paths = list(existing_draft.image_paths or []) + saved_paths
+    if not saved_paths:
+        return templates.TemplateResponse("create_post.html", ctx(request, db, error="Choose at least one image to publish."))
+
+    # Image-derived tags are generated only for the first image, as before.
     existing_tags = set(extract_hashtags(caption_text))
-    image_tags = [tag for tag in hashtags_for_image(image.filename or "photo") if tag not in existing_tags]
+    image_tags = [tag for tag in hashtags_for_image(saved_paths[0]) if tag not in existing_tags]
     if image_tags:
         caption_text = f"{caption_text} {' '.join(f'#{tag}' for tag in image_tags)}".strip()
-    post = Post(caption=caption_text, image_path=filename, user_id=user.id)
+    post = Post(caption=caption_text, image_path=saved_paths[0], user_id=user.id)
     db.add(post)
     db.flush()
+    db.add_all([PostMedia(post_id=post.id, image_path=path, position=index) for index, path in enumerate(saved_paths[1:], 1)])
+    if existing_draft:
+        db.delete(existing_draft)
     enqueue_graph_event(
         db,
         "post.created",
@@ -703,9 +762,10 @@ def delete_post(
     if post:
         deleted_post_id = post.id
         # Delete image file
-        img_path = os.path.join(UPLOAD_DIR, post.image_path)
-        if os.path.exists(img_path):
-            os.remove(img_path)
+        for image_path in [post.image_path] + [media.image_path for media in post.media]:
+            img_path = os.path.join(UPLOAD_DIR, image_path)
+            if os.path.exists(img_path):
+                os.remove(img_path)
         db.delete(post)
         enqueue_graph_event(db, "post.deleted", {"post_id": deleted_post_id})
         db.commit()

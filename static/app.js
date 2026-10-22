@@ -31,7 +31,8 @@ document.addEventListener("DOMContentLoaded", () => {
     timestamp.textContent = new Date(message.created_at).toLocaleString([], { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
     row.append(author, bubble, timestamp);
     list.append(row);
-    list.scrollTop = list.scrollHeight;
+    list.scrollTop = list.scrollHeight;    list.scrollTop = list.scrollHeight;
+
   };
 
   if (thread && messageForm) {
@@ -135,14 +136,19 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   const assistantForm = document.querySelector("[data-assistant-form]");
-  if (assistantForm) {
+  if (assistantForm && !assistantForm.dataset.bound) {
+    assistantForm.dataset.bound = "1";
+    let assistantInFlight = false;
     assistantForm.addEventListener("submit", async (event) => {
       event.preventDefault();
+      if (assistantInFlight) return;
+      assistantInFlight = true;
       const input = assistantForm.querySelector("input[name=question]");
       const answer = document.querySelector("[data-assistant-answer]");
       const history = document.querySelector("[data-assistant-history]");
       const button = assistantForm.querySelector("button");
       button.disabled = true;
+      answer.hidden = false;
       answer.textContent = "Thinking…";
       try {
         const formData = new FormData(assistantForm);
@@ -166,11 +172,16 @@ document.addEventListener("DOMContentLoaded", () => {
           history.append(questionMessage, answerMessage);
           history.scrollTop = history.scrollHeight;
         }
+        // The history is now the source of truth for completed Q&A pairs. The
+        // separate panel is only used while the current request is running.
+        answer.hidden = true;
         input.value = "";
       } catch (error) {
+        answer.hidden = false;
         answer.textContent = error.message;
       } finally {
         button.disabled = false;
+        assistantInFlight = false;
       }
     });
   }
@@ -185,6 +196,19 @@ document.addEventListener("DOMContentLoaded", () => {
         input.focus();
       }
     });
+  });
+
+  document.querySelectorAll("[data-carousel]").forEach((carousel) => {
+    const images = [...carousel.querySelectorAll(".carousel-image")];
+    if (images.length < 2) return;
+    let index = 0;
+    const render = () => {
+      images.forEach((image, imageIndex) => { image.hidden = imageIndex !== index; });
+      const count = carousel.querySelector("[data-carousel-count]");
+      if (count) count.textContent = `${index + 1} / ${images.length}`;
+    };
+    carousel.querySelector("[data-carousel-prev]")?.addEventListener("click", () => { index = (index - 1 + images.length) % images.length; render(); });
+    carousel.querySelector("[data-carousel-next]")?.addEventListener("click", () => { index = (index + 1) % images.length; render(); });
   });
 });
 

@@ -12,13 +12,24 @@
             <div class="flash-error">⚠ {{ error }}</div>
             {% endif %}
 
-            <form method="POST" action="/post/create" enctype="multipart/form-data">
+            {% if saved %}<div class="flash-success">Draft saved.</div>{% endif %}
+            <form method="POST" action="/post/create" enctype="multipart/form-data" id="post-create-form">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <input type="hidden" name="publish" value="1" id="post-publish-mode">
+                <input type="hidden" name="draft_id" id="draft-id" value="{{ active_draft.id if active_draft else '' }}">
+                {% if active_draft and active_draft.image_paths %}
+                <div class="draft-preview" style="display:flex; gap:.5rem; flex-wrap:wrap; margin-bottom:1rem;">
+                    {% for image_path in active_draft.image_paths %}
+                    <img src="/uploads/{{ image_path }}" alt="Draft image {{ loop.index }}" style="width:72px;height:72px;object-fit:cover;border-radius:8px;">
+                    {% endfor %}
+                </div>
+                <div style="font-size:.78rem;color:var(--text-muted);margin-bottom:1rem;">Existing draft images will be kept when you share or update this draft.</div>
+                {% endif %}
                 <div class="form-group">
-                    <label>Image *</label>
-                    <input type="file" name="image" accept="image/*" required
+                    <label>Images *</label>
+                    <input type="file" name="images" accept="image/*" multiple
                            style="padding:0.5rem; cursor:pointer;">
-                    <div style="font-size:0.78rem; color:var(--text-muted); margin-top:0.3rem;">JPG, PNG, GIF, WEBP allowed</div>
+                    <div style="font-size:0.78rem; color:var(--text-muted); margin-top:0.3rem;">Select multiple images for an Instagram-style carousel.</div>
                 </div>
 
                 <div class="form-group">
@@ -28,9 +39,21 @@
 
                 <div style="display:flex; gap:0.8rem; margin-top:0.5rem;">
                     <a href="/feed" class="btn-cancel" style="flex:1; text-align:center; padding:0.7rem;">Cancel</a>
+                    <button type="submit" class="btn-cancel" style="flex:1;" onclick="document.getElementById('post-publish-mode').value='0';">Save draft</button>
                     <button type="submit" class="btn-primary" style="flex:2;">Share</button>
                 </div>
             </form>
+            {% if drafts %}
+            <div style="margin-top:1.5rem; border-top:1px solid var(--border); padding-top:1rem;">
+                <strong>Drafts</strong>
+                {% for draft in drafts %}
+                <div style="display:flex; justify-content:space-between; gap:.6rem; margin-top:.7rem; font-size:.82rem;">
+                    <span>{{ draft.caption or "Untitled draft" }} · {{ draft.image_paths|length }} image(s)</span>
+                    <a class="btn-cancel" href="/post/create?draft_id={{ draft.id }}">Edit</a>
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
         </div>
     </div>
 </div>
