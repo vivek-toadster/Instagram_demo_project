@@ -39,6 +39,7 @@ NEO4J_DATABASE = os.getenv("NEO4J_DATABASE")
 # Groq powers the optional natural-language assistant. Keep the secret in the
 # local environment; never put it in source code or templates.
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+GROQ_API_KEY_1 = os.getenv("GROQ_API_KEY_1") or os.getenv("HROQ_API_KEY_1")
 GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-20b")
 GROQ_API_URL = os.getenv(
     "GROQ_API_URL",

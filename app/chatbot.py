@@ -9,7 +9,7 @@ from datetime import datetime, timezone, timedelta
 
 import httpx
 
-from app.config import GROQ_API_KEY, GROQ_API_URL, GROQ_MODEL, GROQ_TIMEOUT_SECONDS
+from app.config import GROQ_API_KEY, GROQ_API_KEY_1, GROQ_API_URL, GROQ_MODEL, GROQ_TIMEOUT_SECONDS
 
 logger = logging.getLogger(__name__)
 
@@ -54,10 +54,8 @@ def _post_context(post, growth_context=None) -> str:
     return selected + (f"\nCreator facts: {growth_context}" if growth_context else "")
 
 
-def _groq_completion(question: str, post=None, growth_context=None) -> str | None:
+def _groq_completion_with_key(api_key: str, question: str, post=None, growth_context=None) -> str | None:
     """Ask Groq for a concise answer, returning None on provider failure."""
-    if not GROQ_API_KEY:
-        return None
     payload = {
         "model": GROQ_MODEL,
         "temperature": 0.4,
@@ -85,7 +83,7 @@ def _groq_completion(question: str, post=None, growth_context=None) -> str | Non
         response = httpx.post(
             GROQ_API_URL,
             headers={
-                "Authorization": f"Bearer {GROQ_API_KEY}",
+                "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json",
             },
             json=payload,
@@ -101,6 +99,28 @@ def _groq_completion(question: str, post=None, growth_context=None) -> str | Non
     except (httpx.HTTPError, KeyError, IndexError, TypeError, ValueError) as exc:
         logger.warning("Groq assistant request failed: %s", type(exc).__name__)
         return None
+
+
+def _groq_completion(question: str, post=None, growth_context=None) -> str | None:
+    for api_key in (GROQ_API_KEY, GROQ_API_KEY_1):
+        if api_key:
+            answer = _groq_completion_with_key(api_key, question, post, growth_context)
+            if answer:
+                return answer
+    return None
+
+
+def is_draft_publish_request(question: str) -> bool:
+    lowered = question.lower()
+    return bool(
+        re.search(r"\b(publish|post|share|upload)\b", lowered)
+        and re.search(r"\bdraft(?:s|\s+(?:number|no\.?|id))?\b", lowered)
+    ) or bool(re.search(r"\b(?:image|photo)\b.*\bfrom\b.*\bdraft", lowered))
+
+
+def extract_draft_number(question: str) -> int | None:
+    match = re.search(r"#\s*(\d+)\b|\bdrafts?(?:\s+(?:number|no\.?|id)\s*|\s+)(\d+)\b", question, re.IGNORECASE)
+    return int(match.group(1) or match.group(2)) if match else None
 
 
 def _local_answer(question: str, post=None, growth_context=None) -> str:

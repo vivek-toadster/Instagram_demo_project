@@ -1,5 +1,7 @@
 import os
 import hmac
+import logging
+import re
 import secrets
 import shutil
 from datetime import datetime, timezone
@@ -31,12 +33,13 @@ from app.auth import (
 from app.graph_outbox import enqueue_graph_event
 from app.feed import get_feed_posts
 from app.hashtags import extract_hashtags, hashtags_for_image
-from app.chatbot import answer_question
+from app.chatbot import answer_question, extract_draft_number, is_draft_publish_request
 from app.database import SessionLocal
 from app.realtime import chat_manager
 
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
+logger = logging.getLogger(__name__)
 
 UPLOAD_DIR = "uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
@@ -90,6 +93,32 @@ def ctx(request, db, **kwargs):
         "csrf_token": get_csrf_token(request),
         **kwargs,
     }
+
+
+def _draft_options(db, user):
+    return [draft.id for draft in db.query(DraftPost).filter(DraftPost.user_id == user.id).order_by(DraftPost.updated_at.desc(), DraftPost.id.desc()).all() if (draft.caption or "").strip() or draft.image_paths]
+
+
+def _draft_image_path(path: str) -> str | None:
+    if not isinstance(path, str) or not path:
+        return None
+    root = os.path.abspath(UPLOAD_DIR)
+    candidate = os.path.abspath(os.path.join(root, path))
+    return candidate if candidate.startswith(root + os.sep) and os.path.isfile(candidate) else None
+
+
+def _publish_post(db, user, caption: str, image_paths: list[str]):
+    caption_text = (caption or "").strip()
+    existing_tags = set(extract_hashtags(caption_text))
+    image_tags = [tag for tag in hashtags_for_image(image_paths[0]) if tag not in existing_tags]
+    if image_tags:
+        caption_text = f"{caption_text} {' '.join(f'#{tag}' for tag in image_tags)}".strip()
+    post = Post(caption=caption_text, image_path=image_paths[0], user_id=user.id)
+    db.add(post)
+    db.flush()
+    db.add_all([PostMedia(post_id=post.id, image_path=path, position=index) for index, path in enumerate(image_paths[1:], 1)])
+    enqueue_graph_event(db, "post.created", {"post_id": post.id, "user_id": post.user_id, "caption": post.caption, "image_path": post.image_path, "created_at": post.created_at.isoformat() if post.created_at else None, "hashtags": extract_hashtags(post.caption)})
+    return post
 
 
 def _sidebar_users(db: Session, user: User, limit: int = 5) -> list[tuple[User, bool]]:
@@ -517,6 +546,40 @@ def chatbot(
     user = get_current_user(request, db)
     if not user:
         return JSONResponse({"ok": False, "error": "Please log in first."}, status_code=401)
+    awaiting = request.session.get("chatbot_awaiting_draft_number")
+    selected_id = extract_draft_number(question)
+    standalone = re.fullmatch(r"\s*#?\s*(\d+)\s*", question)
+    if selected_id is None and awaiting and standalone:
+        selected_id = int(standalone.group(1))
+    if is_draft_publish_request(question) or (awaiting and selected_id is not None):
+        options = _draft_options(db, user)
+        if selected_id is None:
+            available = ", ".join(f"#{item}" for item in options)
+            answer = "Which draft number would you like to publish?"
+            if available:
+                answer += f" Available drafts: {available}."
+            else:
+                answer = "You have no saved drafts with content to publish."
+            request.session["chatbot_awaiting_draft_number"] = True
+            return {"ok": True, "action": "choose_draft", "answer": answer, "draft_options": options}
+        draft = db.query(DraftPost).filter(DraftPost.id == selected_id, DraftPost.user_id == user.id).first()
+        if not draft:
+            return JSONResponse({"ok": False, "error": f"Draft #{selected_id} was not found."}, status_code=404)
+        image_paths = list(draft.image_paths or [])
+        if not image_paths:
+            return JSONResponse({"ok": False, "error": f"Draft #{draft.id} has no images to publish."}, status_code=400)
+        if any(_draft_image_path(path) is None for path in image_paths):
+            return JSONResponse({"ok": False, "error": f"Draft #{draft.id} contains a missing image and cannot be published."}, status_code=400)
+        try:
+            post = _publish_post(db, user, draft.caption or "", image_paths)
+            db.delete(draft)
+            db.commit()
+        except Exception:
+            db.rollback()
+            logger.exception("Draft publish failed for user=%s draft=%s", user.id, selected_id)
+            return JSONResponse({"ok": False, "error": "Publishing failed. Please try again."}, status_code=500)
+        request.session.pop("chatbot_awaiting_draft_number", None)
+        return {"ok": True, "published": True, "answer": f"Draft #{selected_id} has been published to your feed.", "post_id": post.id}
     selected_post_id = None
     if post_id:
         try:
@@ -693,29 +756,9 @@ async def create_post(
     if not saved_paths:
         return templates.TemplateResponse("create_post.html", ctx(request, db, error="Choose at least one image to publish."))
 
-    # Image-derived tags are generated only for the first image, as before.
-    existing_tags = set(extract_hashtags(caption_text))
-    image_tags = [tag for tag in hashtags_for_image(saved_paths[0]) if tag not in existing_tags]
-    if image_tags:
-        caption_text = f"{caption_text} {' '.join(f'#{tag}' for tag in image_tags)}".strip()
-    post = Post(caption=caption_text, image_path=saved_paths[0], user_id=user.id)
-    db.add(post)
-    db.flush()
-    db.add_all([PostMedia(post_id=post.id, image_path=path, position=index) for index, path in enumerate(saved_paths[1:], 1)])
+    post = _publish_post(db, user, caption_text, saved_paths)
     if existing_draft:
         db.delete(existing_draft)
-    enqueue_graph_event(
-        db,
-        "post.created",
-        {
-            "post_id": post.id,
-            "user_id": post.user_id,
-            "caption": post.caption,
-            "image_path": post.image_path,
-            "created_at": post.created_at.isoformat() if post.created_at else None,
-            "hashtags": extract_hashtags(post.caption),
-        },
-    )
     db.commit()
     return RedirectResponse(url="/feed", status_code=302)
 

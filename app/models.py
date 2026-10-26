@@ -155,7 +155,7 @@ class Message(Base):
     conversation = relationship("Conversation", back_populates="messages")
     sender = relationship("User")
 
-
+  
 class GraphOutboxEvent(Base):
     """Durable PostgreSQL event waiting to be projected into Neo4j."""
     __tablename__ = "graph_outbox_events"
